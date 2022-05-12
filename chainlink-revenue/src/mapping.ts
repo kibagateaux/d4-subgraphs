@@ -1,18 +1,10 @@
-import { BigInt } from "@graphprotocol/graph-ts"
 import {
-  ChainlinkFeedRegistry,
-  AccessControllerSet,
   FeedConfirmed,
-  FeedProposed,
-  OwnershipTransferRequested,
-  OwnershipTransferred
 } from "./types/ChainlinkFeedRegistry/ChainlinkFeedRegistry"
 
 import {
   OraclePaid as OraclePaidEvent
 } from "./types/templates/ChainlinkFeed/ChainlinkFeed"
-
-import { Node, Feed, Payment  } from "./types/schema"
 
 import {
   getOrCreateFeed,

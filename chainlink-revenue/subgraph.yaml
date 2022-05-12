@@ -22,8 +22,7 @@ dataSources:
       abis:
         - name: ChainlinkFeedRegistry
           file: ./abis/ChainlinkFeedRegistry.json
-        # import uni v3 abi to use for price fetching
-        - name: UniV3Pool
+        - name: UniV3Pool  # import uni v3 abi to use for price fetching
           file: ./abis/UniV3Pool.json
       eventHandlers:
         - event: FeedConfirmed(indexed address,indexed address,indexed address,address,uint16,address)
@@ -48,5 +47,4 @@ templates:
           file: ./abis/ChainlinkFeed.json
       eventHandlers:
         - event: OraclePaid(indexed address,indexed address,uint256,indexed address)
-                            # transmitter, payee, amount, link token
-          handler: handleOraclePaid
+          handler: handleOraclePaid # transmitter, payee, amount, link token

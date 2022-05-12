@@ -1,17 +1,17 @@
 type Feed @entity {
-  id: ID!
+  id: ID! # address
   nodes: [Node!]!
   payments: [Payment!] @derivedFrom(field: "feed")
   startBlock: BigInt! # when this subgrpah starts tracking data, not initial deployment
 }
 
 type Node @entity {
-  id: ID!
+  id: ID!  # address
   payments: [Payment!] @derivedFrom(field: "to")
 }
 
 type Payment @entity(immutable: true) {
-  id: ID!
+  id: ID! # keccak256(txHash, feedAddress, nodeAddress)
   amount: BigInt!
   usd: BigInt! # value of tokens in usd at payment block
   timestamp: BigInt!

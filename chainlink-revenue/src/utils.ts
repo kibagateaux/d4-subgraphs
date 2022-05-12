@@ -1,8 +1,7 @@
 import {
-  ByteArray,
   BigInt,
-  crypto,
   Address,
+  crypto,
   log,
  } from "@graphprotocol/graph-ts"
 
@@ -54,14 +53,16 @@ const ethUsdPool = UniV3Pool.bind(UNI_V3_ETH_USDC_5_BPS_POOL);
 
 // getting price from uni v3 pool docs
 // https://docs.uniswap.org/sdk/guides/fetching-prices#understanding-sqrtprice
-export function getLinkPrice(block: BigInt): number {
-  const linkEthPrice = (2 ** 192 / linkEthPool.slot0().value0 ** 2) as number;
+export function getLinkPrice(block: BigInt): BigInt {
+  const linkEthPrice = (new BigInt(2)).pow(192).div(linkEthPool.slot0().value0.pow(2));
   log.info('LINK/ETH price {} at block {}', [linkEthPrice.toString(), block.toString()]);
 
-  const ethUsdPrice =  (ethUsdPool.slot0().value0 ** 2 / 2 ** 192) as number;
+  const ethUsdPrice =  ethUsdPool.slot0().value0.pow(2).div((new BigInt(2)).pow(192));
   log.info('ETH/USD price {} at block {}', [ethUsdPrice.toString(), block.toString()]);
   // TODO need to do something about token decimals before returning price me thinks
-  return linkEthPrice / ethUsdPrice;
+  return linkEthPrice
+    .div( ethUsdPrice)
+    .div((new BigInt(10)).pow(18)); // div LINK token decimals (probs wrong)
 }
 
 
@@ -100,8 +101,8 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
 
     payment.amount = event.params.amount;
     payment.usd = event.params.amount
-      .times(BigInt.fromU64(getLinkPrice(event.block.number) as u64))
-      .div(BigInt.fromU64(10e18 as u64)); // remove LINK token decimals
+      .times(getLinkPrice(event.block.number))
+      .div((new BigInt(10)).pow(18)); // remove LINK token decimals
     payment.block = event.block.number;
     payment.timestamp = event.block.timestamp;
 
@@ -119,7 +120,9 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
 
     // add node to feed's list if not already included
     if(!feed.nodes.includes(payment.to)) {
-      feed.nodes.push(payment.to)
+      const nodes = feed.nodes;
+      nodes.push(payment.to); // can't push directly to array in enttiy
+      feed.nodes = nodes;
       feed.save()
     }
   }
