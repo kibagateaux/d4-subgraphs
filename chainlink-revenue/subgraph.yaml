@@ -1,0 +1,52 @@
+specVersion: 0.0.2
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: ChainlinkFeedRegistry
+    network: mainnet
+    source:
+      address: "0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf"
+      abi: ChainlinkFeedRegistry
+      startBlock: 12864088 
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - AccessControllerSet
+        - FeedConfirmed
+        - FeedProposed
+        - OwnershipTransferRequested
+        - OwnershipTransferred
+      abis:
+        - name: ChainlinkFeedRegistry
+          file: ./abis/ChainlinkFeedRegistry.json
+        # import uni v3 abi to use for price fetching
+        - name: UniV3Pool
+          file: ./abis/UniV3Pool.json
+      eventHandlers:
+        - event: FeedConfirmed(indexed address,indexed address,indexed address,address,uint16,address)
+          handler: handleFeedConfirmed
+      file: ./src/mapping.ts
+
+templates:
+  - name: ChainlinkFeed
+    kind: ethereum/contract
+    network: mainnet
+    source:
+      abi: ChainlinkFeed
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      file: ./src/mapping.ts
+      entities:
+        - ChainlinkFeed
+      abis:
+        - name: ChainlinkFeed
+          file: ./abis/ChainlinkFeed.json
+      eventHandlers:
+        - event: OraclePaid(indexed address,indexed address,uint256,indexed address)
+                            # transmitter, payee, amount, link token
+          handler: handleOraclePaid

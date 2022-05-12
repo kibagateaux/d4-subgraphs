@@ -1,0 +1,27 @@
+type Feed @entity {
+  id: ID!
+  nodes: [Node!]!
+  payments: [Payment!] @derivedFrom(field: "feed")
+  startBlock: BigInt! # when this subgrpah starts tracking data, not initial deployment
+}
+
+type Node @entity {
+  id: ID!
+  payments: [Payment!] @derivedFrom(field: "to")
+}
+
+type Payment @entity(immutable: true) {
+  id: ID!
+  amount: BigInt!
+  usd: BigInt! # value of tokens in usd at payment block
+  timestamp: BigInt!
+  block: BigInt!
+  to: Node!
+  feed: Feed!
+}
+
+type GlobalSummary @entity {
+  id: ID! # 0x0
+  totalTokensPaid: BigInt! # in LINK
+  totalUsdPaid: BigInt!
+}
