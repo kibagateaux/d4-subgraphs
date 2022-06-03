@@ -1,0 +1,181 @@
+type ETF @entity {
+  id: ID!
+  price: BigInt
+  totalSupply: BigInt
+  marketCap: BigInt       # aka TVL
+  totalAddresses: BigInt
+  components: [Component!]!
+  
+  # if all done by governance then same address
+  manager: Bytes!
+  methodologist: Bytes!
+
+  annualFee: BigInt!      # 
+  mintFee: BigInt!
+  redeemFee: BigInt!
+}
+
+# https://github.com/messari/subgraphs/blob/master/schema-generic.graphql
+type Token @entity {
+  " Smart contract address of the token "
+  id: ID!
+
+  " Name of the token, mirrored from the smart contract "
+  name: String!
+  " Symbol of the token, mirrored from the smart contract "
+  symbol: String!
+  " The number of decimal places this token uses, default to 18 "
+  decimals: Int!
+  " Optional field to track the price of a token, mostly for caching purposes "
+  lastPriceUSD: BigDecimal
+  " Optional field to track the block number of the last token price "
+  lastPriceBlockNumber: BigInt
+}
+
+
+type Component @entity implements Token {
+  id: ID! # hash ETF + Component token addresses
+  etf: ETF! # ensure the 1 to many mapping on ETF
+  allocation: Int! 
+  # amount of Component per ETF
+  amount: BigInt!
+
+  # standard token stuff
+  id: ID!
+  name: String!
+  symbol: String!
+  decimals: Int!
+  lastPriceUSD: BigDecimal
+  lastPriceBlockNumber: BigInt
+}
+
+type EtfDexPool {
+  id: ID! # pool address
+  etf: ETF!
+  totalSwapVolume: BigInt! # in ETF tokens
+  totalSwapVolumeUsd: BigInt! 
+
+  # assume that pools are uni 50/50 pools
+  quoteToken: Bytes! # address of other token in pool
+  
+  quoteTokenBalance: BigInt!
+  EtfBalance: BigInt!
+
+  swaps: [Swap]! @derivedFrom("pool")
+}
+
+type Swap @entity {
+  id: ID! #tx hash
+
+}
+
+type ComponentDexPool {
+  id: ID! # pool address
+  etf: ETF!
+  totalSwapVolume: BigInt! # in ETF tokens
+  totalSwapVolumeUsd: BigInt! 
+
+  # assume that pools are uni 50/50 pools
+  quoteToken: Bytes! # address of other token in pool
+  
+  quoteTokenBalance: BigInt!
+  EtfBalance: BigInt!
+
+  swaps: [Swap]! @derivedFrom("pool")
+}
+
+# type Approval @entity {
+#   id: ID!
+#   owner: Bytes! # address
+#   spender: Bytes! # address
+#   value: BigInt! # uint256
+# }
+
+# type ComponentAdded @entity {
+#   id: ID!
+#   _component: Bytes! # address
+# }
+
+# type ComponentRemoved @entity {
+#   id: ID!
+#   _component: Bytes! # address
+# }
+
+# type DefaultPositionUnitEdited @entity {
+#   id: ID!
+#   _component: Bytes! # address
+#   _realUnit: BigInt! # int256
+# }
+
+# type ExternalPositionDataEdited @entity {
+#   id: ID!
+#   _component: Bytes! # address
+#   _positionModule: Bytes! # address
+#   _data: Bytes! # bytes
+# }
+
+# type ExternalPositionUnitEdited @entity {
+#   id: ID!
+#   _component: Bytes! # address
+#   _positionModule: Bytes! # address
+#   _realUnit: BigInt! # int256
+# }
+
+# type Invoked @entity {
+#   id: ID!
+#   _target: Bytes! # address
+#   _value: BigInt! # uint256
+#   _data: Bytes! # bytes
+#   _returnValue: Bytes! # bytes
+# }
+
+# type ManagerEdited @entity {
+#   id: ID!
+#   _newManager: Bytes! # address
+#   _oldManager: Bytes! # address
+# }
+
+# type ModuleAdded @entity {
+#   id: ID!
+#   _module: Bytes! # address
+# }
+
+# type ModuleInitialized @entity {
+#   id: ID!
+#   _module: Bytes! # address
+# }
+
+# type ModuleRemoved @entity {
+#   id: ID!
+#   _module: Bytes! # address
+# }
+
+# type PendingModuleRemoved @entity {
+#   id: ID!
+#   _module: Bytes! # address
+# }
+
+# type PositionModuleAdded @entity {
+#   id: ID!
+#   _component: Bytes! # address
+#   _positionModule: Bytes! # address
+# }
+
+# type PositionModuleRemoved @entity {
+#   id: ID!
+#   _component: Bytes! # address
+#   _positionModule: Bytes! # address
+# }
+
+# type PositionMultiplierEdited @entity {
+#   id: ID!
+#   _newMultiplier: BigInt! # int256
+# }
+
+# type Transfer @entity {
+#   id: ID!
+#   from: Bytes! # address
+#   to: Bytes! # address
+#   value: BigInt! # uint256
+# }
+# #
