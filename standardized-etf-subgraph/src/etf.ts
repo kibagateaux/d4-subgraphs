@@ -21,9 +21,6 @@ export function handleTransfer(event: TransferEvent): void {
   const from = event.params.from
   const etfAddress = event.address
   const etf = getOrCreateEtf(etfAddress)
-  const sender = event.transaction.from
-  let id = event.transaction.hash.toHexString()
-
 
   if(to !== ZERO_ADDRESS && from !== ZERO_ADDRESS) {
     // on normal transfer just track total holder account + balance
@@ -33,32 +30,35 @@ export function handleTransfer(event: TransferEvent): void {
     holder2.amount = holder2.amount.minus(event.params.value)
     holder1.save()
     holder2.save()
-    return;
-  }
-  
-  // track mint/burn events and update global data
-  
-  const holder = getOrCreateHolder(etfAddress, sender)
-
-  let entity: RedeemEvent | MintEvent | null = RedeemEvent.load(id)
-
-  if(to === ZERO_ADDRESS) {
-    // burn
-    entity = new RedeemEvent(id)
-    etf.totalSupply = etf.totalSupply.minus(event.params.value)
   } else {
-    // mint
-    entity = new MintEvent(id)
-    etf.totalSupply = etf.totalSupply.plus(event.params.value)
-  }
-  
-  entity.holder = event.transaction.from.toHexString()
-  entity.amount = event.params.value
-  entity.block = event.block.number
-  entity.time = event.block.timestamp
+    // track mint/burn events and update global data
+    const isMint = from === ZERO_ADDRESS ? true : false;
+    let id = event.transaction.hash.toHexString()
+    
+    if(isMint) {
+      let entity = new MintEvent(id);
+      entity.holder = event.transaction.from.toHexString()
+      entity.amount = event.params.value
+      entity.block = event.block.number
+      entity.time = event.block.timestamp
+    
+      etf.totalSupply = etf.totalSupply.minus(event.params.value)
 
-  entity.save()
-  etf.save()
+      entity.save()
+      etf.save()
+    } else {
+      let entity = new RedeemEvent(id);
+      entity.holder = event.transaction.from.toHexString()
+      entity.amount = event.params.value
+      entity.block = event.block.number
+      entity.time = event.block.timestamp
+    
+      etf.totalSupply = etf.totalSupply.plus(event.params.value)
+
+      entity.save()
+      etf.save()
+    }
+  }
 }
 
 // export function handleComponentAdded(event: ComponentAddedEvent): void {
