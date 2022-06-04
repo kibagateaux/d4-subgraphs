@@ -12,7 +12,7 @@ export function getOrCreateEtf(id: Address): ETF {
   if(etf === null) {
     etf = new ETF(id.toHexString())
     const token = _ERC20.bind(id)
-    etf.decimals = token.decimals().toI64()
+    etf.decimals = token.decimals().toI32()
     etf.symbol = token.symbol()
     etf.name = token.name()
     etf.totalSupply = token.totalSupply()
