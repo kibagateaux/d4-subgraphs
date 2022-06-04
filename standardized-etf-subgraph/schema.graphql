@@ -1,22 +1,5 @@
-type ETF @entity {
-  id: ID!
-  price: BigInt
-  totalSupply: BigInt
-  marketCap: BigInt       # aka TVL
-  totalAddresses: BigInt
-  components: [Component!]!
-  
-  # if all done by governance then same address
-  manager: Bytes!
-  methodologist: Bytes!
-
-  annualFee: BigInt!      # 
-  mintFee: BigInt!
-  redeemFee: BigInt!
-}
-
 # https://github.com/messari/subgraphs/blob/master/schema-generic.graphql
-type Token @entity {
+interface Token {
   " Smart contract address of the token "
   id: ID!
 
@@ -32,150 +15,147 @@ type Token @entity {
   lastPriceBlockNumber: BigInt
 }
 
-
-type Component @entity implements Token {
-  id: ID! # hash ETF + Component token addresses
-  etf: ETF! # ensure the 1 to many mapping on ETF
-  allocation: Int! 
-  # amount of Component per ETF
-  amount: BigInt!
+type ETF implements Token @entity {
+  id: ID!
 
   # standard token stuff
-  id: ID!
   name: String!
   symbol: String!
   decimals: Int!
   lastPriceUSD: BigDecimal
   lastPriceBlockNumber: BigInt
+
+  totalSupply: BigInt
+  marketCap: BigInt       # aka TVL
+  totalAddresses: BigInt
+  components: [Component!]
+  holders: [Holder!] @derivedFrom(field: "etf")
+  pools: [Pool!] @derivedFrom(field: "baseToken")
+
+  # if all done by governance then same address
+  manager: Bytes!
+  methodologist: Bytes!
+
+  # in bps
+  annualFee: BigInt!
+  mintFee: BigInt!
+  redeemFee: BigInt!
+
+  events: [Event!] # events about ETF token
 }
 
-type EtfDexPool {
-  id: ID! # pool address
+interface Event {
+  id: ID! # hash of etf token, tx hash, and event type
   etf: ETF!
-  totalSwapVolume: BigInt! # in ETF tokens
+  
+  block: BigInt!
+  time: BigInt!
+}
+
+type MintEvent implements Event @entity {
+  id: ID!
+  etf: ETF!
+  block: BigInt!
+  time: BigInt!
+
+  holder: Holder!
+  amount: BigInt!
+}
+
+type RedeemEvent implements Event @entity {
+  id: ID!
+  etf: ETF!
+  block: BigInt!
+  time: BigInt!
+
+  holder: Holder!
+  amount: BigInt!
+}
+
+type TransferEvent implements Event @entity {
+  id: ID!
+  etf: ETF!
+  block: BigInt!
+  time: BigInt!
+
+  holder: Holder!
+  to: Holder!
+  amount: BigInt!
+}
+
+type BuyEvent implements Event @entity {
+  id: ID!
+  etf: ETF!
+  block: BigInt!
+  time: BigInt!
+
+  swap: Swap!
+}
+
+type SellEvent implements Event @entity {
+  id: ID!
+  etf: ETF!
+  block: BigInt!
+  time: BigInt!
+
+  swap: Swap!
+}
+
+
+type Component implements Token @entity {
+  id: ID! # hash ETF + Component token addresses
+
+  # standard token stuff
+  name: String!
+  symbol: String!
+  decimals: Int!
+  lastPriceUSD: BigDecimal
+  lastPriceBlockNumber: BigInt
+
+  etf: ETF! # ensure the 1 to many mapping on ETF
+  allocation: Int! # % of etf invested in token
+  amount: BigInt! # amount of Component per ETF
+  isEligible: Boolean! # if tokemn should be in ETF according to methodology
+  
+  pools: [Pool!] @derivedFrom(field: "baseToken")
+}
+
+type Pool @entity {
+  id: ID! # pool address
+  totalSwapVolume: BigInt! # in base tokens
   totalSwapVolumeUsd: BigInt! 
 
   # assume that pools are uni 50/50 pools
-  quoteToken: Bytes! # address of other token in pool
+  baseToken: Token!   # address of token we are tracking
+  quoteToken: Token!  # address of other token in pool
   
+  baseTokenBalance: BigInt!
   quoteTokenBalance: BigInt!
-  EtfBalance: BigInt!
 
-  swaps: [Swap]! @derivedFrom("pool")
+  swaps: [Swap!] @derivedFrom(field: "pool")
 }
 
 type Swap @entity {
-  id: ID! #tx hash
+  id: ID! # tx hash
+  pool: Pool!
+  trader: Holder!
+  isBuy: Boolean! # if swap is buying token we are tracking
 
+  tokenIn: Bytes!
+  tokenInAmount: BigInt!
+  tokenInUsd: BigInt!
+
+  tokenOut: Bytes!
+  tokenOutAmount: BigInt!
+  tokenOutUsd: BigInt!
 }
 
-type ComponentDexPool {
-  id: ID! # pool address
+type Holder @entity {
+  id: ID! # holder address
   etf: ETF!
-  totalSwapVolume: BigInt! # in ETF tokens
-  totalSwapVolumeUsd: BigInt! 
+  amount: BigInt! #current holdings in ETF
 
-  # assume that pools are uni 50/50 pools
-  quoteToken: Bytes! # address of other token in pool
-  
-  quoteTokenBalance: BigInt!
-  EtfBalance: BigInt!
-
-  swaps: [Swap]! @derivedFrom("pool")
+  swaps: [Swap!] @derivedFrom(field: "trader")
+  mints: [MintEvent!] @derivedFrom(field: "holder")
+  redeems: [RedeemEvent!] @derivedFrom(field: "holder")
 }
-
-# type Approval @entity {
-#   id: ID!
-#   owner: Bytes! # address
-#   spender: Bytes! # address
-#   value: BigInt! # uint256
-# }
-
-# type ComponentAdded @entity {
-#   id: ID!
-#   _component: Bytes! # address
-# }
-
-# type ComponentRemoved @entity {
-#   id: ID!
-#   _component: Bytes! # address
-# }
-
-# type DefaultPositionUnitEdited @entity {
-#   id: ID!
-#   _component: Bytes! # address
-#   _realUnit: BigInt! # int256
-# }
-
-# type ExternalPositionDataEdited @entity {
-#   id: ID!
-#   _component: Bytes! # address
-#   _positionModule: Bytes! # address
-#   _data: Bytes! # bytes
-# }
-
-# type ExternalPositionUnitEdited @entity {
-#   id: ID!
-#   _component: Bytes! # address
-#   _positionModule: Bytes! # address
-#   _realUnit: BigInt! # int256
-# }
-
-# type Invoked @entity {
-#   id: ID!
-#   _target: Bytes! # address
-#   _value: BigInt! # uint256
-#   _data: Bytes! # bytes
-#   _returnValue: Bytes! # bytes
-# }
-
-# type ManagerEdited @entity {
-#   id: ID!
-#   _newManager: Bytes! # address
-#   _oldManager: Bytes! # address
-# }
-
-# type ModuleAdded @entity {
-#   id: ID!
-#   _module: Bytes! # address
-# }
-
-# type ModuleInitialized @entity {
-#   id: ID!
-#   _module: Bytes! # address
-# }
-
-# type ModuleRemoved @entity {
-#   id: ID!
-#   _module: Bytes! # address
-# }
-
-# type PendingModuleRemoved @entity {
-#   id: ID!
-#   _module: Bytes! # address
-# }
-
-# type PositionModuleAdded @entity {
-#   id: ID!
-#   _component: Bytes! # address
-#   _positionModule: Bytes! # address
-# }
-
-# type PositionModuleRemoved @entity {
-#   id: ID!
-#   _component: Bytes! # address
-#   _positionModule: Bytes! # address
-# }
-
-# type PositionMultiplierEdited @entity {
-#   id: ID!
-#   _newMultiplier: BigInt! # int256
-# }
-
-# type Transfer @entity {
-#   id: ID!
-#   from: Bytes! # address
-#   to: Bytes! # address
-#   value: BigInt! # uint256
-# }
-# #
