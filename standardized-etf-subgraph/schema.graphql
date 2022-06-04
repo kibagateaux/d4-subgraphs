@@ -25,27 +25,26 @@ type ETF implements Token @entity {
   lastPriceUSD: BigDecimal
   lastPriceBlockNumber: BigInt
 
-  totalSupply: BigInt
-  marketCap: BigInt       # aka TVL
-  totalAddresses: BigInt
+  totalSupply: BigInt!
+  marketCap: BigInt!       # aka TVL
   components: [Component!]
   holders: [Holder!] @derivedFrom(field: "etf")
   pools: [Pool!] @derivedFrom(field: "baseToken")
 
   # if all done by governance then same address
-  manager: Bytes!
-  methodologist: Bytes!
+  manager: Bytes
+  methodologist: Bytes
 
   # in bps
-  annualFee: BigInt!
-  mintFee: BigInt!
-  redeemFee: BigInt!
+  annualFee: BigInt
+  mintFee: BigInt
+  redeemFee: BigInt
 
-  events: [Event!] # events about ETF token
+  events: [Event!] @derivedFrom(field: "etf")
 }
 
 interface Event {
-  id: ID! # hash of etf token, tx hash, and event type
+  id: ID!
   etf: ETF!
   
   block: BigInt!
@@ -103,7 +102,7 @@ type SellEvent implements Event @entity {
 
 
 type Component implements Token @entity {
-  id: ID! # hash ETF + Component token addresses
+  id: ID! # "component - etf" address
 
   # standard token stuff
   name: String!
@@ -151,7 +150,7 @@ type Swap @entity {
 }
 
 type Holder @entity {
-  id: ID! # holder address
+  id: ID! # "holder - etf" address
   etf: ETF!
   amount: BigInt! #current holdings in ETF
 
