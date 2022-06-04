@@ -45,19 +45,39 @@ import { ZERO_ADDRESS } from "./prices/common/constants";
 export function handleTransfer(event: TransferEvent): void {
   const to = event.params.to
   const from = event.params.from
-  let id = event.transaction.hash.toHex()
+  const sender = event.transaction.from
+  let id = event.transaction.hash.toHexString()
 
-  if(to !== ZERO_ADDRESS || from !== ZERO_ADDRESS )
-    return; // only track mint/burn events
+  if(
+    to === ZERO_ADDRESS && from === sender ||
+    from === ZERO_ADDRESS && to === sender
+  ) {
+    // only track mint/burn events, tx sender mut be etf holder
+    return;
+  }
 
-  const EventType = to === ZERO_ADDRESS ? BurnEvent : MintEvent;
-  const entity = new EventType(id);
+  const etf = getOrCreateEtf(event.address)
+  const holder = getOrCreateHolder(event.transaction.from)
+
+  let entity  = Transfer.load(id)
+
+  if(to === ZERO_ADDRESS) {
+    // burn
+    entity = new RedeemEvent(id)
+    etf.totalSupply = etf.totalSupply.sub(event.params.value)
+  } else {
+    // mint
+    entity = new MintEvent(id)
+    etf.totalSupply = etf.totalSupply.add(event.params.value)
+  }
   
-  entity.holder = event.transaction.from
+  entity.holder = event.transaction.from.toHexString()
   entity.amount = event.params.value
   entity.block = event.block.number
   entity.time = event.block.timestamp
+
   entity.save()
+  etf.save()
 }
 
 

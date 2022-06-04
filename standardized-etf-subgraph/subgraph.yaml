@@ -22,7 +22,7 @@ dataSources:
         ############## Price Oracle ###############
         ###########################################
         # ERC20
-        - name: ERC20
+        - name: _ERC20
           file: ./abis/Prices/ERC20.json
         # Curve Contracts
         - name: CurveRegistry
@@ -59,18 +59,18 @@ dataSources:
       file: ./src/etf.ts
 templates:
   ## DEX pool template to track ETF trading after deployed
-  - name: Exchange
+  - name: EtfPools
     kind: ethereum/contract
     network: mainnet
     source:
-      abi: Exchange
+      abi: UniswapPair
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
       file: ./src/pool.ts
       entities:
-        - Exchange
+        - EtfPools
       abis:
         *ABIs
       eventHandlers:
