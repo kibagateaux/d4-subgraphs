@@ -32,16 +32,17 @@ export function handleTransfer(event: Transfer): void {
         pool1 = Pool.load(etf.id),
         pool2 = Pool.load(from.toHexString())
 
-  log.warning(
-    "transfer to {}, from {} ", [
-    to.toHexString(), from.toHexString()
-  ])
+  // log.warning(
+  //   "transfer to {}, from {} ", [
+  //   to.toHexString(), from.toHexString()
+  // ])
   
   // if can't load etf then can't process transfer
   if(etf === null) return;
 
   // if transfer is to a dex then tracked in Swap, not Transfer. 
-  if(pool1 !== null || pool2 !== null) return;
+  // TODO: if(event.receipt.logs.includes(SwapEvent)) return;
+  if(pool1 !== null || pool2 !== null) return; 
 
   if(from == ZERO_ADDRESS) {
     // mint
@@ -53,8 +54,9 @@ export function handleTransfer(event: Transfer): void {
     mint.block = event.block.number
     mint.time = event.block.timestamp
   
+
+    log.warning("mint time {}", [mint.time.toString()])
     etf.totalSupply = etf.totalSupply.plus(event.params.value)
-    log.warning("mint time {}, amount {}", [mint.time.toString(), mint.amount.toString()])
 
     mint.save()
   } else if (to == ZERO_ADDRESS) {
@@ -65,10 +67,10 @@ export function handleTransfer(event: Transfer): void {
     redeem.holder =  holdr.id
     redeem.amount = event.params.value
     redeem.block = event.block.number
+
+    log.warning("redeem time {}", [redeem.time.toString()])
     redeem.time = event.block.timestamp
-    log.warning("redeem time {}, amount {}", [redeem.time.toString(), redeem.amount.toString()])
   
-    
     redeem.save()
     etf.totalSupply = etf.totalSupply.minus(event.params.value)
   } else {
@@ -87,15 +89,20 @@ export function handleTransfer(event: Transfer): void {
     transfer.amount = event.params.value
     transfer.block = event.block.number
     transfer.time = event.block.timestamp
-    transfer.save()
+
     log.warning("etf normal transfer {}", [event.params.value.toString()])
+    transfer.save()
   }
 
   etf.marketCap = getMarketcap(etfAddress)
   etf.save()
 }
 
+
+
 // funcs maybe use later
+
+
 // export function handleComponentAdded(event: ComponentAddedEvent): void {
 //   let entity = new ComponentAdded(
 //     event.transaction.hash.toHex() + "-" + event.logIndex.toString()

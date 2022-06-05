@@ -4,7 +4,9 @@ import {
   Address,
   log,
   Bytes,
-  ethereum
+  ethereum,
+  crypto,
+  ByteArray,
 } from "@graphprotocol/graph-ts";
 
 import { TokenSetETF as EtfContract } from "../generated/Web3DataIndex/TokenSetETF";
@@ -14,23 +16,11 @@ import { Pools } from "../generated/templates"
 import { getUsdPrice } from "./prices";
 import { BIGDECIMAL_ZERO, BIGDECIMAL_1E18, BIGINT_ZERO } from "./prices/common/constants";
 
-export function getMarketcap(etf: Address): BigDecimal {
-  const token = _ERC20.bind(etf)
-  if(token !== null) {
-    let totalSupplyResult = token.try_totalSupply()
-    let totalSupply = totalSupplyResult.reverted ? BIGINT_ZERO : totalSupplyResult.value;
-    
-    let decimalsResult = token.try_decimals()
-    let decimals = decimalsResult.reverted ? BIGINT_ZERO : decimalsResult.value;
-
-    const price = getUsdPrice(etf, totalSupply.toBigDecimal())
-    
-    return BIGDECIMAL_ZERO.equals(price) ?
-      BIGDECIMAL_ZERO :
-      price.div(BIGDECIMAL_1E18.times(decimals.toBigDecimal()))
-    }
-
-  return BIGDECIMAL_ZERO
+/**
+ * @notice generate entity id for ETF events in schema
+ */
+export function getEventId(event: ethereum.Event): string {
+  return `${event.address.toHexString()}-${event.logIndex.toString()}-${event.transaction.hash.toHexString()}`
 }
 
 export function getOrCreateEtf(id: Address): ETF {
@@ -65,29 +55,10 @@ export function getOrCreateEtf(id: Address): ETF {
 
     etf.save()
 
-    // TODO genereate pool addresses for uni v2 / sushi
+    // getOrCreatePoolsForToken(id)
   }
 
   return etf
-}
-
-const UNI_v2_FACTORY = Address.fromString("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-const UNI_FACTORY_HEXCODE = '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
-const SUSHI_FACTORY = Address.fromString("0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
-const ETH_ADDRESS = Address.fromString("0x0")
-const USDC_ADDRESS = Address.fromString("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
-
-
-export function getOrCreatePoolsForToken(etf: Address): Pool[] {
-  // https://docs.uniswap.org/protocol/V2/guides/smart-contract-integration/getting-pair-addresses
-  let tokens: Address[] = etf > USDC_ADDRESS ? [USDC_ADDRESS, etf] : [etf, USDC_ADDRESS];
-  let tupleArray: Array<ethereum.Value> = [
-    ethereum.Value.fromAddress(tokens[0]),
-    ethereum.Value.fromAddress(tokens[1]),
-  ]
-  let encoded = ethereum.encode(ethereum.Value.fromTuple(tupleArray as ethereum.Tuple))!
-
-  return [new Pool("0")]
 }
 
 export function getOrCreateHolder(etf: Address, holder: Address): Holder {
@@ -119,6 +90,107 @@ export function getTokenBalance(etf: Address, holder: Address): BigInt {
   }
 }
 
-export function getEventId(event: ethereum.Event): string {
-  return `${event.address}-${event.logIndex}-${event.transaction.hash}`
+export function getMarketcap(etf: Address): BigDecimal {
+  const token = _ERC20.bind(etf)
+  if(token !== null) {
+    let totalSupplyResult = token.try_totalSupply()
+    let totalSupply = totalSupplyResult.reverted ? BIGINT_ZERO : totalSupplyResult.value;
+    
+    let decimalsResult = token.try_decimals()
+    let decimals = decimalsResult.reverted ? BIGINT_ZERO : decimalsResult.value;
+
+    const price = getUsdPrice(etf, totalSupply.toBigDecimal())
+    
+    return BIGDECIMAL_ZERO.equals(price) ?
+      BIGDECIMAL_ZERO :
+      price.div(BIGDECIMAL_1E18.times(decimals.toBigDecimal()))
+    }
+
+  return BIGDECIMAL_ZERO
+}
+
+
+const UNI_V2_FACTORY = Address.fromString("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
+const SUSHI_FACTORY = Address.fromString("0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
+const ETH_ADDRESS = Address.fromString("0x0")
+const USDC_ADDRESS = Address.fromString("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
+const UNI_FACTORY_INITCODE = Bytes.fromHexString('0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f')
+
+const DATA_ETH_SUSHI_POOL = Address.fromString("0x208226200b45b82212b814f49efa643980a7bdd1")
+
+const encodeAndHash = (values: ethereum.Value[]): ByteArray =>
+  crypto.keccak256(
+    ethereum.encode(
+      ethereum.Value.fromTuple(values as ethereum.Tuple)
+    )!
+  ) as ByteArray
+
+const getTokenSalt = (token0: Address, token1: Address): ByteArray => 
+  encodeAndHash([
+    ethereum.Value.fromAddress(token0),
+    ethereum.Value.fromAddress(token1),
+  ])
+
+const getPoolPairAddress = (factory: Address, salt: Bytes, initCode: Bytes): Address  => {
+// https://docs.uniswap.org/protocol/V2/guides/smart-contract-integration/getting-pair-addresses
+
+  const poolHash = encodeAndHash([
+    ethereum.Value.fromBytes(Bytes.fromHexString('0xff')),
+    ethereum.Value.fromAddress(factory),
+    ethereum.Value.fromBytes(salt),
+    ethereum.Value.fromBytes(initCode)
+  ])
+  log.warning("uni pool hash {}", [poolHash.toHexString()])
+  
+  const poolAddr = poolHash
+    .toHexString()
+    .substr(0, 22) // offset 0x, cut first 20 bytes from hash to use as address
+  log.warning("uni pool addr {}", [poolAddr])
+
+  return Address.fromString(poolAddr)
+}
+
+const orderTokensForPoolHash = (token0: Address, token1: Address): Address[] => {
+  // eth = 0x0 so other token cant be lower
+  if(token0 === ETH_ADDRESS) return [token0, token1]
+  if(token1 === ETH_ADDRESS) return [token1, token0]
+  // order tokens by uint(address) value
+  return token0.toU64() > token1.toU64() ? [token1, token0] : [token0, token1]
+}
+export function getOrCreatePoolsForToken(etf: Address): Pool[] {
+   const poolSettings: Address[][] = [
+    //  [ UNI_V2_FACTORY, etf, USDC_ADDRESS ],
+    //  [ UNI_V2_FACTORY, etf, ETH_ADDRESS ],
+    //  [ SUSHI_FACTORY, etf, USDC_ADDRESS ],
+     [ SUSHI_FACTORY, etf, ETH_ADDRESS ]
+   ]
+  
+  let pools: Pool[] = poolSettings.map<Pool>((p: Address[]): Pool => {
+    // const ordered = orderTokensForPoolHash(p[1], p[2])
+    // const addy = getPoolPairAddress(
+    //   p[0],
+    //   getTokenSalt(ordered[0], ordered[1]) as Bytes,
+    //   UNI_FACTORY_INITCODE
+    // )
+    const addy = DATA_ETH_SUSHI_POOL
+
+    let pool = Pool.load(addy.toHexString())!
+    if(pool == null) {
+      Pools.create(addy)
+      pool = new Pool(addy.toHexString())
+
+      pool.baseToken = p[1].toHexString()
+      pool.quoteToken = p[2].toHexString()
+      pool.baseTokenBalance = BIGINT_ZERO
+      pool.quoteTokenBalance = BIGINT_ZERO
+      pool.totalSwapVolume = BIGINT_ZERO
+      pool.totalSwapVolumeUsd = BIGINT_ZERO
+      
+      pool.save()
+    }
+
+    return pool
+  })
+
+  return pools
 }

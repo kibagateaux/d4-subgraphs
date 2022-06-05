@@ -3,7 +3,10 @@
   "name": "subgraph-index-standard",
   "scripts": {
     "codegen": "graph codegen",
+    "precodegen": "rm -rf ./generated",
     "build": "graph build",
+    "prebuild": "rm -rf ./build",
+    "predeploy": "yarn run codegen",
     "deploy": "graph deploy --studio index-standard",
     "create-local": "graph create --node http://localhost:8020/ index-standard",
     "remove-local": "graph remove --node http://localhost:8020/ index-standard",
