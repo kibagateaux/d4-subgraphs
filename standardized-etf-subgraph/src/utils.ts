@@ -14,13 +14,16 @@ import { _ERC20  } from "../generated/Web3DataIndex/_ERC20";
 import { ETF, Holder, Pool } from "../generated/schema";
 import { Pools } from "../generated/templates"
 import { getUsdPrice } from "./prices";
-import { BIGDECIMAL_ZERO, BIGDECIMAL_1E18, BIGINT_ZERO } from "./prices/common/constants";
+import { BIGDECIMAL_ZERO, BIGDECIMAL_1E18, BIGINT_ZERO, ZERO_ADDRESS } from "./prices/common/constants";
 
 /**
  * @notice generate entity id for ETF events in schema
  */
 export function getEventId(event: ethereum.Event): string {
-  return `${event.address.toHexString()}-${event.logIndex.toString()}-${event.transaction.hash.toHexString()}`
+  const addr = event.address.toHexString(),
+        tx = event.transaction.hash.toHexString(),
+        nonce = event.logIndex.toString()
+  return `${addr}-${tx}-${nonce}`
 }
 
 export function getOrCreateEtf(id: Address): ETF {
@@ -30,7 +33,7 @@ export function getOrCreateEtf(id: Address): ETF {
     etf = new ETF(id.toHexString())
     const token = _ERC20.bind(id)
 
-    // can do checks to ensure its an "etf" token e.g. contract name is SetToken
+    // TODO can do checks to ensure its an "etf" token e.g. contract name is SetToken
 
     let failed = false;
 
@@ -55,13 +58,13 @@ export function getOrCreateEtf(id: Address): ETF {
 
     etf.save()
 
-    // getOrCreatePoolsForToken(id)
+    getOrCreatePoolsForToken(id)
   }
 
   return etf
 }
 
-export function getOrCreateHolder(etf: Address, holder: Address): Holder {
+export function getOrCreateHolder(holder: Address, etf: Address): Holder {
   const id = `${holder.toHexString()}-${etf.toHexString()}`;
   let hodlr = Holder.load(id);
 
@@ -99,11 +102,11 @@ export function getMarketcap(etf: Address): BigDecimal {
     let decimalsResult = token.try_decimals()
     let decimals = decimalsResult.reverted ? BIGINT_ZERO : decimalsResult.value;
 
-    const price = getUsdPrice(etf, totalSupply.toBigDecimal())
+    const value = getUsdPrice(etf, totalSupply.toBigDecimal())
     
-    return BIGDECIMAL_ZERO.equals(price) ?
+    return BIGDECIMAL_ZERO.equals(value) ?
       BIGDECIMAL_ZERO :
-      price.div(BIGDECIMAL_1E18.times(decimals.toBigDecimal()))
+      value.div(BIGDECIMAL_1E18.times(decimals.toBigDecimal()))
     }
 
   return BIGDECIMAL_ZERO
@@ -112,26 +115,29 @@ export function getMarketcap(etf: Address): BigDecimal {
 
 const UNI_V2_FACTORY = Address.fromString("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
 const SUSHI_FACTORY = Address.fromString("0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
-const ETH_ADDRESS = Address.fromString("0x0")
+const ETH_ADDRESS = ZERO_ADDRESS
 const USDC_ADDRESS = Address.fromString("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
 const UNI_FACTORY_INITCODE = Bytes.fromHexString('0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f')
 
 const DATA_ETH_SUSHI_POOL = Address.fromString("0x208226200b45b82212b814f49efa643980a7bdd1")
 
-const encodeAndHash = (values: ethereum.Value[]): ByteArray =>
-  crypto.keccak256(
+function encodeAndHash(values: Array<ethereum.Value>): ByteArray {
+  return crypto.keccak256(
     ethereum.encode(
-      ethereum.Value.fromTuple(values as ethereum.Tuple)
+      // forcefully cast value[] -> tuple
+      ethereum.Value.fromTuple( changetype<ethereum.Tuple>(values) )
     )!
-  ) as ByteArray
-
-const getTokenSalt = (token0: Address, token1: Address): ByteArray => 
-  encodeAndHash([
+  )
+}
+      
+function getTokenSalt(token0: Address, token1: Address): ByteArray  {
+  return encodeAndHash([
     ethereum.Value.fromAddress(token0),
-    ethereum.Value.fromAddress(token1),
+    ethereum.Value.fromAddress(token1)
   ])
+}
 
-const getPoolPairAddress = (factory: Address, salt: Bytes, initCode: Bytes): Address  => {
+export function getPoolPairAddress(factory: Address, salt: Bytes, initCode: Bytes): Address {
 // https://docs.uniswap.org/protocol/V2/guides/smart-contract-integration/getting-pair-addresses
 
   const poolHash = encodeAndHash([
@@ -141,56 +147,68 @@ const getPoolPairAddress = (factory: Address, salt: Bytes, initCode: Bytes): Add
     ethereum.Value.fromBytes(initCode)
   ])
   log.warning("uni pool hash {}", [poolHash.toHexString()])
-  
-  const poolAddr = poolHash
-    .toHexString()
-    .substr(0, 22) // offset 0x, cut first 20 bytes from hash to use as address
+  const addrOffset = 26 // trim  0x + first 12 bytes
+  const poolAddr = poolHash.toHexString().substring(addrOffset)
   log.warning("uni pool addr {}", [poolAddr])
 
   return Address.fromString(poolAddr)
 }
 
-const orderTokensForPoolHash = (token0: Address, token1: Address): Address[] => {
+function orderTokensForPoolHash(token0: Address, token1: Address): Address[] {
   // eth = 0x0 so other token cant be lower
   if(token0 === ETH_ADDRESS) return [token0, token1]
   if(token1 === ETH_ADDRESS) return [token1, token0]
+
   // order tokens by uint(address) value
-  return token0.toU64() > token1.toU64() ? [token1, token0] : [token0, token1]
+  const getVal = (a: Address): BigInt =>
+    BigInt.fromByteArray(ByteArray.fromHexString(a.toHexString()))
+
+  log.warning(
+    "vals to compare @ {} @ {} @ {} @ ",
+    [(getVal(token0) < getVal(token1)).toString(), getVal(token0).toString(), getVal(token1).toString()]
+  )
+  // const getVal = (a: Address): BigInt => BigInt.fromString(a.toHexString())
+  return getVal(token0) < getVal(token1) ?
+    [token0, token1] :
+    [token1, token0]
 }
+
 export function getOrCreatePoolsForToken(etf: Address): Pool[] {
    const poolSettings: Address[][] = [
-    //  [ UNI_V2_FACTORY, etf, USDC_ADDRESS ],
-    //  [ UNI_V2_FACTORY, etf, ETH_ADDRESS ],
-    //  [ SUSHI_FACTORY, etf, USDC_ADDRESS ],
+     [ UNI_V2_FACTORY, etf, USDC_ADDRESS ],
+     [ UNI_V2_FACTORY, etf, ETH_ADDRESS ],
+     [ SUSHI_FACTORY, etf, USDC_ADDRESS ],
      [ SUSHI_FACTORY, etf, ETH_ADDRESS ]
    ]
   
-  let pools: Pool[] = poolSettings.map<Pool>((p: Address[]): Pool => {
-    // const ordered = orderTokensForPoolHash(p[1], p[2])
-    // const addy = getPoolPairAddress(
-    //   p[0],
-    //   getTokenSalt(ordered[0], ordered[1]) as Bytes,
-    //   UNI_FACTORY_INITCODE
-    // )
-    const addy = DATA_ETH_SUSHI_POOL
+  const pools: Pool[] = changetype<Pool[]>(
+    poolSettings.map<Pool>((p: Address[]): Pool => {
+      const ordered = orderTokensForPoolHash(p[1], p[2])
+      const addy = getPoolPairAddress(
+        p[0],
+        changetype<Bytes>(getTokenSalt(ordered[0], ordered[1])),
+        UNI_FACTORY_INITCODE
+      )
+      // const addy = DATA_ETH_SUSHI_POOL
 
-    let pool = Pool.load(addy.toHexString())!
-    if(pool == null) {
-      Pools.create(addy)
-      pool = new Pool(addy.toHexString())
+      let pool = Pool.load(addy.toHexString())
+      if(pool == null) {
+        Pools.create(addy)
+        pool = new Pool(addy.toHexString())
 
-      pool.baseToken = p[1].toHexString()
-      pool.quoteToken = p[2].toHexString()
-      pool.baseTokenBalance = BIGINT_ZERO
-      pool.quoteTokenBalance = BIGINT_ZERO
-      pool.totalSwapVolume = BIGINT_ZERO
-      pool.totalSwapVolumeUsd = BIGINT_ZERO
-      
-      pool.save()
-    }
+        pool.baseToken = p[1].toHexString()
+        pool.quoteToken = p[2].toHexString()
+        pool.baseTokenBalance = BIGINT_ZERO
+        pool.quoteTokenBalance = BIGINT_ZERO
+        pool.totalSwapVolume = BIGINT_ZERO
+        pool.totalSwapVolumeUsd = BIGINT_ZERO
+        
+        pool.save()
+      }
 
-    return pool
-  })
+      return pool
+    })
+  )
 
   return pools
 }

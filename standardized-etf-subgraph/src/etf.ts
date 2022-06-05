@@ -27,10 +27,10 @@ export function handleTransfer(event: Transfer): void {
         to = event.params.to,
         from = event.params.from,
         etfAddress = event.address,
-        eventId = getEventId(event),
         etf = getOrCreateEtf(etfAddress),
-        pool1 = Pool.load(etf.id),
-        pool2 = Pool.load(from.toHexString())
+        eventId = getEventId(event)
+        // pool1 = Pool.load(etf.id),
+        // pool2 = Pool.load(from.toHexString())
 
   // log.warning(
   //   "transfer to {}, from {} ", [
@@ -42,11 +42,11 @@ export function handleTransfer(event: Transfer): void {
 
   // if transfer is to a dex then tracked in Swap, not Transfer. 
   // TODO: if(event.receipt.logs.includes(SwapEvent)) return;
-  if(pool1 !== null || pool2 !== null) return; 
+  // if(pool1 !== null || pool2 !== null) return; 
 
   if(from == ZERO_ADDRESS) {
     // mint
-    const holdr = getOrCreateHolder(etfAddress, to)
+    const holdr = getOrCreateHolder(to, etfAddress)
     let mint = new MintEvent(eventId)
     mint.etf = etf.id
     mint.holder =  holdr.id
@@ -61,26 +61,26 @@ export function handleTransfer(event: Transfer): void {
     mint.save()
   } else if (to == ZERO_ADDRESS) {
     // redeem
-    const holdr = getOrCreateHolder(etfAddress, from)
+    const holdr = getOrCreateHolder(from, etfAddress)
     let redeem = new RedeemEvent(eventId)
     redeem.etf = etf.id
     redeem.holder =  holdr.id
     redeem.amount = event.params.value
     redeem.block = event.block.number
+    redeem.time = event.block.timestamp
 
     log.warning("redeem time {}", [redeem.time.toString()])
-    redeem.time = event.block.timestamp
   
     redeem.save()
     etf.totalSupply = etf.totalSupply.minus(event.params.value)
   } else {
     // on normal transfer just track total holder account + balance
-    const holder1 = getOrCreateHolder(etfAddress, to)
-    holder1.amount = holder1.amount.plus(event.params.value)
-    const holder2 = getOrCreateHolder(etfAddress, from)
-    holder2.amount = holder2.amount.minus(event.params.value)
-    holder1.save()
-    holder2.save()
+    const receiver = getOrCreateHolder(to, etfAddress)
+    receiver.amount = receiver.amount.plus(event.params.value)
+    const sender = getOrCreateHolder(from, etfAddress)
+    sender.amount = sender.amount.minus(event.params.value)
+    receiver.save()
+    sender.save()
 
     const transfer = new TransferEvent(eventId)
     transfer.etf = etf.id
