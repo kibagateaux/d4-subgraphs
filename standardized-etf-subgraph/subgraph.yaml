@@ -3,10 +3,10 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: ethereum
-    name: Web3DataIndex
+    name: Web3DataIndex # DATA
     network: mainnet
     source:
-      abi: TokenSetETF # DATA
+      abi: TokenSetETF
       startBlock: 13239236
       address: "0x33d63ba1e57e54779f7ddaeaa7109349344cf5f1"
     mapping: &Mappings
@@ -64,10 +64,10 @@ dataSources:
           handler: handleTransfer
       file: ./src/etf.ts
   - kind: ethereum
-    name: DeFiPulseIndex
+    name: DeFiPulseIndex # DPI
     network: mainnet
     source:
-      abi: TokenSetETF # DPI
+      abi: TokenSetETF
       startBlock: 10830516
       address: "0x1494ca1f11d487c2bbe4543e90080aeba4ba3c2b"
     mapping:

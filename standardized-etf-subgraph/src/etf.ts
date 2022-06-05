@@ -1,6 +1,6 @@
 import {
   Transfer,
-} from "../generated/TokenSetETF/TokenSetETF"
+} from "../generated/Web3DataIndex/TokenSetETF"
 
 import {
   Holder,

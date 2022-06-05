@@ -3,8 +3,8 @@ import * as FANTOM from "../config/fantom";
 import * as ARBITRUM_ONE from "../config/arbitrum_one";
 
 import { Address, BigDecimal, BigInt, TypedMap } from "@graphprotocol/graph-ts";
-import { UniswapPair__getReservesResult } from "../../../generated/TokenSetEtf/UniswapPair";
-import { SushiSwapPair__getReservesResult } from "../../../generated/TokenSetEtf/SushiSwapPair";
+import { UniswapPair__getReservesResult } from "../../../generated/Web3DataIndex/UniswapPair";
+import { SushiSwapPair__getReservesResult } from "../../../generated/Web3DataIndex/SushiSwapPair";
 
 ///////////////////////////////////////////////////////////////////////////
 /////////////////////////////////// COMMON ////////////////////////////////

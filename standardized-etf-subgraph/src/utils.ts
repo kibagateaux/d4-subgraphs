@@ -7,9 +7,10 @@ import {
   ethereum
 } from "@graphprotocol/graph-ts";
 
-import { TokenSetETF as EtfContract } from "../generated/TokenSetEtf/TokenSetEtf";
-import { _ERC20  } from "../generated/TokenSetEtf/_ERC20";
+import { TokenSetETF as EtfContract } from "../generated/Web3DataIndex/TokenSetETF";
+import { _ERC20  } from "../generated/Web3DataIndex/_ERC20";
 import { ETF, Holder, Pool } from "../generated/schema";
+import { Pools } from "../generated/templates"
 import { getUsdPrice } from "./prices";
 import { BIGDECIMAL_ZERO, BIGDECIMAL_1E18, BIGINT_ZERO } from "./prices/common/constants";
 
