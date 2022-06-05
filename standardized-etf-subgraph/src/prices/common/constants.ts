@@ -13,8 +13,10 @@ import { SushiSwapPair__getReservesResult } from "../../../generated/TokenSetEtf
 export const BIGINT_ZERO = BigInt.fromI32(0);
 export const BIGINT_TEN = BigInt.fromI32(10);
 export const BIGINT_TEN_THOUSAND = BigInt.fromI32(10000);
+export const BIGINT_1E18 = BigInt.fromString('1000000000000000000');
 
 export const BIGDECIMAL_ZERO = new BigDecimal(BIGINT_ZERO);
+export const BIGDECIMAL_1E18 = BigDecimal.fromString('1000000000000000000');
 
 export const DEFAULT_USDC_DECIMALS = 6;
 export const DEFAULT_DECIMALS = BigInt.fromI32(18);

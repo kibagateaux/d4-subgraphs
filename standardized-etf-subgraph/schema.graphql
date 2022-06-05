@@ -26,10 +26,10 @@ type ETF implements Token @entity {
   lastPriceBlockNumber: BigInt
 
   totalSupply: BigInt!
-  marketCap: BigInt!       # aka TVL
-  components: [Component!]
-  holders: [Holder!] @derivedFrom(field: "etf")
-  pools: [Pool!] @derivedFrom(field: "baseToken")
+  marketCap: BigDecimal!       # aka TVL
+  # components: [Component!] @derivedFrom(field: "etf")
+  # holders: [Holder!] @derivedFrom(field: "etf")
+  # pools: [Pool!] @derivedFrom(field: "baseToken")
 
   # if all done by governance then same address
   manager: Bytes
@@ -43,10 +43,30 @@ type ETF implements Token @entity {
   events: [Event!] @derivedFrom(field: "etf")
 }
 
+
+type Component implements Token @entity {
+  id: ID! # "component - etf" address
+
+  # standard token stuff
+  name: String!
+  symbol: String!
+  decimals: Int!
+  lastPriceUSD: BigDecimal
+  lastPriceBlockNumber: BigInt
+
+  etf: ETF! # ensure the 1 to many mapping on ETF
+  allocation: Int! # % of etf invested in token
+  amount: BigInt! # amount of Component per ETF
+  isEligible: Boolean! # if tokemn should be in ETF according to methodology
+  
+  # pools: [Pool!] @derivedFrom(field: "baseToken")
+}
+
+# union TokenLike = Token | ETF | Component
+
 interface Event {
   id: ID!
   etf: ETF!
-  
   block: BigInt!
   time: BigInt!
 }
@@ -77,8 +97,8 @@ type TransferEvent implements Event @entity {
   block: BigInt!
   time: BigInt!
 
-  holder: Holder!
-  to: Holder!
+  from: Holder # nullable for mint/redeem
+  to: Holder # nullable for mint/redeem
   amount: BigInt!
 }
 
@@ -100,25 +120,6 @@ type SellEvent implements Event @entity {
   swap: Swap!
 }
 
-
-type Component implements Token @entity {
-  id: ID! # "component - etf" address
-
-  # standard token stuff
-  name: String!
-  symbol: String!
-  decimals: Int!
-  lastPriceUSD: BigDecimal
-  lastPriceBlockNumber: BigInt
-
-  etf: ETF! # ensure the 1 to many mapping on ETF
-  allocation: Int! # % of etf invested in token
-  amount: BigInt! # amount of Component per ETF
-  isEligible: Boolean! # if tokemn should be in ETF according to methodology
-  
-  pools: [Pool!] @derivedFrom(field: "baseToken")
-}
-
 type Pool @entity {
   id: ID! # pool address
   totalSwapVolume: BigInt! # in base tokens
@@ -138,23 +139,23 @@ type Swap @entity {
   id: ID! # tx hash
   pool: Pool!
   trader: Holder!
-  isBuy: Boolean! # if swap is buying token we are tracking
+  # isBuy: Boolean! # if swap is buying token we are tracking
 
-  tokenIn: Bytes!
+  tokenIn: Token!
   tokenInAmount: BigInt!
   tokenInUsd: BigInt!
 
-  tokenOut: Bytes!
+  tokenOut: Token!
   tokenOutAmount: BigInt!
-  tokenOutUsd: BigInt!
 }
 
 type Holder @entity {
   id: ID! # "holder - etf" address
+  address: Bytes!
   etf: ETF!
   amount: BigInt! #current holdings in ETF
 
-  swaps: [Swap!] @derivedFrom(field: "trader")
-  mints: [MintEvent!] @derivedFrom(field: "holder")
-  redeems: [RedeemEvent!] @derivedFrom(field: "holder")
+  # swaps: [Swap!] @derivedFrom(field: "trader")
+  # mints: [MintEvent!] @derivedFrom(field: "holder")
+  # redeems: [RedeemEvent!] @derivedFrom(field: "holder")
 }

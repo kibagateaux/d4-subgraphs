@@ -3,17 +3,23 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: ethereum
-    name: TokenSetETF
+    name: Web3DataIndex
     network: mainnet
     source:
+      abi: TokenSetETF # DATA
+      startBlock: 13239236
       address: "0x33d63ba1e57e54779f7ddaeaa7109349344cf5f1"
-      abi: TokenSetETF
-    mapping:
+    mapping: &Mappings
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities: &ENTITIES
-        - Transfer
+      entities:
+        - ETF
+        - Component
+        - Holder
+        - MintEvent
+        - RedeemEvent
+        - TransferEvent
       abis: &ABIs
         - name: TokenSetETF
           file: ./abis/TokenSetETF.json
@@ -53,13 +59,22 @@ dataSources:
           file: ./abis/Prices/SushiSwap/Pair.json
         - name: CalculationsSushiSwap
           file: ./abis/Prices/Calculations/SushiSwap.json
-      eventHandlers: &EVENTS
+      eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleTransfer
       file: ./src/etf.ts
+  - kind: ethereum
+    name: DeFiPulseIndex
+    network: mainnet
+    source:
+      abi: TokenSetETF # DPI
+      startBlock: 10830516
+      address: "0x1494ca1f11d487c2bbe4543e90080aeba4ba3c2b"
+    mapping:
+      *Mappings
 templates:
   ## DEX pool template to track ETF trading after deployed
-  - name: EtfPools
+  - name: Pools
     kind: ethereum/contract
     network: mainnet
     source:
@@ -70,7 +85,13 @@ templates:
       language: wasm/assemblyscript
       file: ./src/pool.ts
       entities:
-        - EtfPools
+        - Pool
+        - Swap
+        - ETF
+        - Component
+        - Holder
+        - BuyEvent
+        - SellEvent
       abis:
         *ABIs
       eventHandlers:
