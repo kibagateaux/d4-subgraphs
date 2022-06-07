@@ -11,9 +11,9 @@ type Node @entity {
 }
 
 type Payment @entity(immutable: true) {
-  id: ID! # keccak256(txHash, feedAddress, nodeAddress)
+  id: ID! # txHash+feedAddress+nodeAddress
   amount: BigInt!
-  usd: BigInt! # value of tokens in usd at payment block
+  usd: BigDecimal! # value of tokens in usd at payment block
   timestamp: BigInt!
   block: BigInt!
   to: Node!
@@ -23,5 +23,5 @@ type Payment @entity(immutable: true) {
 type GlobalSummary @entity {
   id: ID! # 0x0
   totalTokensPaid: BigInt! # in LINK
-  totalUsdPaid: BigInt!
+  totalUsdPaid: BigDecimal!
 }

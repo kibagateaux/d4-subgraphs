@@ -1,5 +1,6 @@
 import {
   BigInt,
+  BigDecimal,
   Address,
   crypto,
   log,
@@ -8,24 +9,28 @@ import {
 import { ChainlinkFeed } from "./types/templates"
 
 import {
-  OraclePaid as OraclePaidEvent
-} from "./types/templates/ChainlinkFeed/ChainlinkFeed"
-
-import {
   UniV3Pool
 } from "./types/ChainlinkFeedRegistry/UniV3Pool"
 
+import {
+  OraclePaid as OraclePaidEvent
+} from "./types/templates/ChainlinkFeed/ChainlinkFeed"
+
+import { getUsdPrice } from "./prices"
+
 import { Node, Feed, Payment, GlobalSummary  } from "./types/schema"
+import { BIGDECIMAL_1E18, BIGDECIMAL_ZERO, BIGINT_1E18, BIGINT_ZERO } from "./prices/common/constants"
+
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 export function getGlobalSummary(): GlobalSummary {
   let global = GlobalSummary.load(ZERO_ADDRESS);
   
-  if(!global) {
+  if(global === null) {
     global = new GlobalSummary(ZERO_ADDRESS);
-    global.totalTokensPaid = new BigInt(0);
-    global.totalUsdPaid = new BigInt(0);
+    global.totalTokensPaid = BIGINT_ZERO;
+    global.totalUsdPaid = BIGDECIMAL_ZERO;
     global.save();
   }
 
@@ -34,7 +39,7 @@ export function getGlobalSummary(): GlobalSummary {
 
 export function getOrCreateFeed(address: Address, startBlock: BigInt): Feed {
   let feed = Feed.load(address.toHexString());
-  if(!feed) {
+  if(feed === null) {
     ChainlinkFeed.create(address); // start indexing payments on new feed
     feed = new Feed(address.toHexString());
     feed.startBlock = startBlock;
@@ -53,22 +58,38 @@ const ethUsdPool = UniV3Pool.bind(UNI_V3_ETH_USDC_5_BPS_POOL);
 
 // getting price from uni v3 pool docs
 // https://docs.uniswap.org/sdk/guides/fetching-prices#understanding-sqrtprice
-export function getLinkPrice(block: BigInt): BigInt {
-  const linkEthPrice = (new BigInt(2)).pow(192).div(linkEthPool.slot0().value0.pow(2));
+let priceExponent = 2 ** 192
+let Q192 = BigDecimal.fromString(priceExponent.toString());
+
+export function getLinkUsdPrice(block: BigInt): BigInt {
+  const linkEthXqrtPriceX96 = linkEthPool.slot0().value0;
+  // const linkEthPrice = (new BigInt(2)).pow(192).div(pow(2));
+  // const ethUsdPrice =  ethUsdPool.slot0().value0.pow(2).div((new BigInt(2)).pow(192));
+
+  let linkEthNum = linkEthXqrtPriceX96.times(linkEthXqrtPriceX96).toBigDecimal()
+  let linkEthPrice = linkEthNum
+    .div(Q192)
+    .times(exponentToBigDecimal(BigInt.fromI32(18))) // ETH decimals
+    .div(BIGDECIMAL_1E18); // LINK decimals
+
   log.info('LINK/ETH price {} at block {}', [linkEthPrice.toString(), block.toString()]);
 
-  const ethUsdPrice =  ethUsdPool.slot0().value0.pow(2).div((new BigInt(2)).pow(192));
+  const ethUsdXqrtPriceX96 = ethUsdPool.slot0().value0;
+  let ethUsdNum = ethUsdXqrtPriceX96.times(ethUsdXqrtPriceX96).toBigDecimal()
+  let ethUsdPrice = linkEthNum
+    .div(Q192)
+    .times(exponentToBigDecimal(BigInt.fromI32(6))) // USDC decimals
+    .div(BIGDECIMAL_1E18) // ETH decimals
+
   log.info('ETH/USD price {} at block {}', [ethUsdPrice.toString(), block.toString()]);
   // TODO need to do something about token decimals before returning price me thinks
-  return linkEthPrice
-    .div( ethUsdPrice)
-    .div((new BigInt(10)).pow(18)); // div LINK token decimals (probs wrong)
+  return BigInt.fromString(linkEthPrice.times(ethUsdPrice).toString());
 }
 
 
 export function getOrCreateNode(address: Address): Node {
   let node = Node.load(address.toHexString());
-  if(!node) {
+  if(node === null) {
     node = new Node(address.toHexString());
     node.save();
   }
@@ -89,7 +110,7 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
   const paymentId = generatePaymentId(event);
   let payment = Payment.load(paymentId);
 
-  if(!payment) {
+  if(payment === null) {
     // can't destructure in assemblyscript :'(
     // const {
     //   address,
@@ -98,11 +119,15 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
     // } = event;
 
     payment = new Payment(paymentId);
-
+    
     payment.amount = event.params.amount;
-    payment.usd = event.params.amount
-      .times(getLinkPrice(event.block.number))
-      .div((new BigInt(10)).pow(18)); // remove LINK token decimals
+    // payment.usd = event.params.amount
+    //   .times(getLinkUsdPrice(event.block.number))
+    //   .div((new BigInt(10)).pow(18)); // remove LINK token decimals
+    payment.usd = getUsdPrice(
+      event.params.linkToken,
+      payment.amount.toBigDecimal()
+    ).div(BIGDECIMAL_1E18)
     payment.block = event.block.number;
     payment.timestamp = event.block.timestamp;
 
@@ -129,4 +154,13 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
 
   return payment;
 
+}
+
+
+export function exponentToBigDecimal(decimals: BigInt): BigDecimal {
+  let dec = "1"
+  for (let i = 0; decimals.gt(new BigInt(i)); i++) {
+    dec = dec + "0"
+  }
+  return BigDecimal.fromString(dec)
 }

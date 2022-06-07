@@ -167,13 +167,13 @@ export class Payment extends Entity {
     this.set("amount", Value.fromBigInt(value));
   }
 
-  get usd(): BigInt {
+  get usd(): BigDecimal {
     let value = this.get("usd");
-    return value!.toBigInt();
+    return value!.toBigDecimal();
   }
 
-  set usd(value: BigInt) {
-    this.set("usd", Value.fromBigInt(value));
+  set usd(value: BigDecimal) {
+    this.set("usd", Value.fromBigDecimal(value));
   }
 
   get timestamp(): BigInt {
@@ -253,12 +253,12 @@ export class GlobalSummary extends Entity {
     this.set("totalTokensPaid", Value.fromBigInt(value));
   }
 
-  get totalUsdPaid(): BigInt {
+  get totalUsdPaid(): BigDecimal {
     let value = this.get("totalUsdPaid");
-    return value!.toBigInt();
+    return value!.toBigDecimal();
   }
 
-  set totalUsdPaid(value: BigInt) {
-    this.set("totalUsdPaid", Value.fromBigInt(value));
+  set totalUsdPaid(value: BigDecimal) {
+    this.set("totalUsdPaid", Value.fromBigDecimal(value));
   }
 }
