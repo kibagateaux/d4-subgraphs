@@ -93,23 +93,16 @@ export function getTokenBalance(etf: Address, holder: Address): BigInt {
   }
 }
 
-export function getMarketcap(etf: Address): BigDecimal {
-  const token = _ERC20.bind(etf)
-  if(token !== null) {
-    let totalSupplyResult = token.try_totalSupply()
-    let totalSupply = totalSupplyResult.reverted ? BIGINT_ZERO : totalSupplyResult.value;
-    
-    let decimalsResult = token.try_decimals()
-    let decimals = decimalsResult.reverted ? BIGINT_ZERO : decimalsResult.value;
-
-    const value = getUsdPrice(etf, totalSupply.toBigDecimal())
-    
-    return BIGDECIMAL_ZERO.equals(value) ?
-      BIGDECIMAL_ZERO :
-      value.div(BIGDECIMAL_1E18.times(decimals.toBigDecimal()))
-    }
-
-  return BIGDECIMAL_ZERO
+export function getEtfMarketcap(etf: ETF): BigDecimal {
+  log.warning(
+    "mcap vars supply {}, decimals {}",
+    [etf.totalSupply.toString(), etf.decimals.toString()]
+  )
+  const value = getUsdPrice(
+    Address.fromString(etf.id),
+    etf.totalSupply.toBigDecimal()
+  )
+  return value.div(exponentToBigDecimal(etf.decimals))
 }
 
 
@@ -192,7 +185,7 @@ export function getOrCreatePoolsForToken(etf: Address): Pool[] {
       // const addy = DATA_ETH_SUSHI_POOL
 
       let pool = Pool.load(addy.toHexString())
-      if(pool == null) {
+      if(pool === null) {
         Pools.create(addy)
         pool = new Pool(addy.toHexString())
 
@@ -211,4 +204,12 @@ export function getOrCreatePoolsForToken(etf: Address): Pool[] {
   )
 
   return pools
+}
+
+export function exponentToBigDecimal(decimals: number): BigDecimal {
+  let dec = "1"
+  for (let i = 0; i < decimals; i++) {
+    dec = dec + "0"
+  }
+  return BigDecimal.fromString(dec)
 }

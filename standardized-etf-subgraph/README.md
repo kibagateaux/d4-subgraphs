@@ -9,6 +9,8 @@ example subgraph to get events
     symbol
     totalSupply
     marketCap
+    lastPriceUSD
+    lastPriceBlockNumber
     events {
       __typename
       # ...on TransferEvent {

@@ -10,14 +10,14 @@ import {
   Pool
 } from "../generated/schema"
 
-import { getUsdPrice } from "./prices";
-import { ZERO_ADDRESS } from "./prices/common/constants";
+import { BIGDECIMAL_1E18, ZERO_ADDRESS } from "./prices/common/constants";
 import {
   getOrCreateEtf,
   getTokenBalance,
   getOrCreateHolder,
-  getMarketcap,
+  getEtfMarketcap,
   getEventId,
+  exponentToBigDecimal,
 } from "./utils";
 
 import { log } from "@graphprotocol/graph-ts";
@@ -94,7 +94,10 @@ export function handleTransfer(event: Transfer): void {
     transfer.save()
   }
 
-  etf.marketCap = getMarketcap(etfAddress)
+  etf.marketCap = getEtfMarketcap(etf)
+  etf.lastPriceUSD = etf.marketCap.times(exponentToBigDecimal(etf.decimals)).div(etf.totalSupply.toBigDecimal())
+  etf.lastPriceBlockNumber = event.block.number
+
   etf.save()
 }
 
