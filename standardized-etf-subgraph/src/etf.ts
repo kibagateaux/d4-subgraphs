@@ -63,7 +63,7 @@ export function handleTransfer(event: Transfer): void {
     mint.to =  holdr.id
   
 
-    log.warning("mint time {}", [mint.timestamp.toString()])
+    // log.warning("mint time {}", [mint.timestamp.toString()])
     etf.totalSupply = etf.totalSupply.plus(event.params.value)
 
     mint.save()
@@ -80,7 +80,7 @@ export function handleTransfer(event: Transfer): void {
     redeem.from =  holdr.id
     redeem.to = ZERO_ADDRESS_STRING
 
-    log.warning("redeem time {}", [redeem.timestamp.toString()])
+    // log.warning("redeem time {}", [redeem.timestamp.toString()])
   
     redeem.save()
     etf.totalSupply = etf.totalSupply.minus(event.params.value)
@@ -103,7 +103,7 @@ export function handleTransfer(event: Transfer): void {
     transfer.from = sender.id
     transfer.to = receiver.id
 
-    log.warning("etf normal transfer {}", [event.params.value.toString()])
+    // log.warning("etf normal transfer {}", [event.params.value.toString()])
     transfer.save()
   }
 
