@@ -159,7 +159,7 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
 
 export function exponentToBigDecimal(decimals: BigInt): BigDecimal {
   let dec = "1"
-  for (let i = 0; decimals.gt(new BigInt(i)); i++) {
+  for (let i = 0; decimals.ge(new BigInt(i)); i++) {
     dec = dec + "0"
   }
   return BigDecimal.fromString(dec)

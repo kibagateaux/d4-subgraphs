@@ -1,3 +1,10 @@
+import { TokenSetETF as EtfContract } from "../generated/Web3DataIndex/TokenSetETF";
+import { _ERC20  } from "../generated/Web3DataIndex/_ERC20";
+import { ETF, Holder, LiquidityPool } from "../generated/schema";
+import { Pools } from "../generated/templates"
+
+import { getUsdPrice } from "./prices";
+
 import {
   BigInt,
   BigDecimal,
@@ -9,12 +16,13 @@ import {
   ByteArray,
 } from "@graphprotocol/graph-ts";
 
-import { TokenSetETF as EtfContract } from "../generated/Web3DataIndex/TokenSetETF";
-import { _ERC20  } from "../generated/Web3DataIndex/_ERC20";
-import { ETF, Holder, Pool } from "../generated/schema";
-import { Pools } from "../generated/templates"
-import { getUsdPrice } from "./prices";
-import { BIGDECIMAL_ZERO, BIGDECIMAL_1E18, BIGINT_ZERO, ZERO_ADDRESS } from "./prices/common/constants";
+import {
+  BIGDECIMAL_ZERO,
+  BIGDECIMAL_1E18,
+  BIGINT_ZERO,
+  ZERO_ADDRESS,
+  ZERO_ADDRESS_STRING
+} from "./prices/common/constants";
 
 /**
  * @notice generate entity id for ETF events in schema
@@ -27,57 +35,60 @@ export function getEventId(event: ethereum.Event): string {
 }
 
 export function getOrCreateEtf(id: Address): ETF {
-  let etf = ETF.load(id.toHexString());
+  let etf = ETF.load(id.toHexString())
 
   if(etf === null) {
     etf = new ETF(id.toHexString())
-    const token = _ERC20.bind(id)
+    const erc = _ERC20.bind(id);
 
     // TODO can do checks to ensure its an "etf" token e.g. contract name is SetToken
+    // const metadata = _getTokenMetadataSimple(id)
+    // etf.decimals = metadata.decimals
+    // etf.symbol = metadata.symbol
+    // etf.name = metadata.name
+    // etf.totalSupply = metadata.totalSupply
 
-    let failed = false;
-
-    const decimalResult = token.try_decimals()
-    if(!decimalResult.reverted) etf.decimals = decimalResult.value.toI32();
-    else etf.decimals = 18;
-
-    const symbolResult = token.try_symbol()
-    if(!symbolResult.reverted) etf.symbol = symbolResult.value;
-    else etf.symbol = "XXX";
-
-    const nameResult = token.try_name()
-    if(!nameResult.reverted) etf.name = nameResult.value;
-    else etf.name = "Unknown Token";
+    const nameResult = erc.try_name()
+    if(!nameResult.reverted) etf.name = nameResult.value
+    else etf.name = "Unknown Token"
     
-    // const totalSupplyResult = token.try_totalSupply()
-    // if(!totalSupplyResult.reverted) etf.totalSupply = totalSupplyResult.value;
-    // else etf.totalSupply = BIGINT_ZERO;
-    etf.totalSupply = BIGINT_ZERO;
+    const symbolResult = erc.try_symbol()
+    if(!symbolResult.reverted) etf.symbol = symbolResult.value
+    else etf.symbol = "XXX"
+    
+    const decimalResult = erc.try_decimals()
+    if(!decimalResult.reverted) etf.decimals = decimalResult.value.toI32()
+    else etf.decimals = 18
+    
+    const totalSupplyResult = erc.try_totalSupply()
+    if(!totalSupplyResult.reverted) etf.totalSupply = totalSupplyResult.value
+    else etf.totalSupply = BIGINT_ZERO
+
 
     etf.marketCap = BIGDECIMAL_ZERO // no price yet on first block created
-
+    etf.lastPriceUSD = BIGDECIMAL_ZERO
+    etf.lastPriceBlockNumber = BIGINT_ZERO
+    
+    // thats all mandatory data. can add optional stuf f per provider elsewhere
     etf.save()
 
-    getOrCreatePoolsForToken(id)
+    getOrCreatePoolsForToken(id, true)
   }
 
   return etf
 }
 
 export function getOrCreateHolder(holder: Address, etf: Address): Holder {
-  const id = `${holder.toHexString()}-${etf.toHexString()}`;
-  let hodlr = Holder.load(id);
+  const id = `${holder.toHexString()}-${etf.toHexString()}`
+  let hodlr = Holder.load(id)
 
   if(hodlr === null) {
-    getOrCreateEtf(etf);
-    
+    getOrCreateEtf(etf)
     hodlr = new Holder(id)
 
-    const token = _ERC20.bind(etf)
     hodlr.etf = etf.toHexString()
     hodlr.address = Bytes.fromHexString(holder.toHexString())
-    const result = token.try_balanceOf(holder)
-    hodlr.amount = result.reverted ? BIGINT_ZERO : result.value
+    hodlr.amount = getTokenBalance(etf, holder)
 
     hodlr.save()
   }
@@ -85,12 +96,9 @@ export function getOrCreateHolder(holder: Address, etf: Address): Holder {
   return hodlr
 }
 
-export function getTokenBalance(etf: Address, holder: Address): BigInt {
-  try {
-    return _ERC20.bind(etf).balanceOf(holder)
-  } catch (e) {
-    return BIGINT_ZERO
-  }
+export function getTokenBalance(token: Address, address: Address): BigInt {
+  const result = _ERC20.bind(token).try_balanceOf(address)
+  return result.reverted ? BIGINT_ZERO : result.value
 }
 
 export function getEtfMarketcap(etf: ETF): BigDecimal {
@@ -123,11 +131,13 @@ function encodeAndHash(values: Array<ethereum.Value>): ByteArray {
   )
 }
       
-function getTokenSalt(token0: Address, token1: Address): ByteArray  {
-  return encodeAndHash([
-    ethereum.Value.fromAddress(token0),
-    ethereum.Value.fromAddress(token1)
-  ])
+function getTokenSalt(token0: Address, token1: Address): Bytes  {
+  return Bytes.fromByteArray(
+    encodeAndHash([
+      ethereum.Value.fromAddress(token0),
+      ethereum.Value.fromAddress(token1)
+    ])
+  )
 }
 
 export function getPoolPairAddress(factory: Address, salt: Bytes, initCode: Bytes): Address {
@@ -166,36 +176,64 @@ function orderTokensForPoolHash(token0: Address, token1: Address): Address[] {
     [token1, token0]
 }
 
-export function getOrCreatePoolsForToken(etf: Address): Pool[] {
+export function getOrCreatePoolsForToken(token: Address, isEtf: bool): LiquidityPool[] {
    const poolSettings: Address[][] = [
-     [ UNI_V2_FACTORY, etf, USDC_ADDRESS ],
-     [ UNI_V2_FACTORY, etf, ETH_ADDRESS ],
-     [ SUSHI_FACTORY, etf, USDC_ADDRESS ],
-     [ SUSHI_FACTORY, etf, ETH_ADDRESS ]
+     [ UNI_V2_FACTORY, token, USDC_ADDRESS ],
+     [ UNI_V2_FACTORY, token, ETH_ADDRESS ],
+     [ SUSHI_FACTORY, token, USDC_ADDRESS ],
+     [ SUSHI_FACTORY, token, ETH_ADDRESS ]
    ]
-  
-  const pools: Pool[] = changetype<Pool[]>(
-    poolSettings.map<Pool>((p: Address[]): Pool => {
+  // don't need to have eth/usdc token data stored. only care about LP
+
+  const pools: LiquidityPool[] = changetype<LiquidityPool[]>(
+    poolSettings.map<LiquidityPool>((p: Address[]): LiquidityPool => {
       const ordered = orderTokensForPoolHash(p[1], p[2])
       const addy = getPoolPairAddress(
         p[0],
+        // Bytes.fromByteArray(getTokenSalt(ordered[0], ordered[1])),
         changetype<Bytes>(getTokenSalt(ordered[0], ordered[1])),
         UNI_FACTORY_INITCODE
       )
       // const addy = DATA_ETH_SUSHI_POOL
 
-      let pool = Pool.load(addy.toHexString())
+      let pool = LiquidityPool.load(addy.toHexString())
+      
       if(pool === null) {
-        Pools.create(addy)
-        pool = new Pool(addy.toHexString())
+        Pools.create(addy) //start tracking events on pool
+        pool = new LiquidityPool(addy.toHexString()) 
+        const poolErc = _ERC20.bind(addy)
 
-        pool.baseToken = p[1].toHexString()
-        pool.quoteToken = p[2].toHexString()
-        pool.baseTokenBalance = BIGINT_ZERO
-        pool.quoteTokenBalance = BIGINT_ZERO
-        pool.totalSwapVolume = BIGINT_ZERO
-        pool.totalSwapVolumeUsd = BIGINT_ZERO
+        const nameResult = poolErc.try_name()
+        if(!nameResult.reverted) pool.name = nameResult.value
+        else pool.name = `${ordered[0]}/${ordered[1]} LP`
         
+        const symbolResult = poolErc.try_symbol()
+        if(!symbolResult.reverted) pool.symbol = symbolResult.value
+        else pool.symbol = `${ordered[0]}-${ordered[1]}-LP`
+        
+        // assumes uni v2 pool
+        const totalSupplyResult = poolErc.try_totalSupply()
+        if(!totalSupplyResult.reverted) pool.outputTokenSupply = totalSupplyResult.value
+        else pool.outputTokenSupply = BIGINT_ZERO
+        
+        pool.inputTokens = ordered.map<string>((a) => a.toString())
+        pool.outputToken  = addy.toHexString() //  for uni v2ish LP token is pair contract
+        pool.inputTokenBalances = [getTokenBalance(addy, ordered[0]), getTokenBalance(addy, ordered[1])]
+        // @dev assume all pools are uni v2ish 50/50 pools
+        pool.inputTokenWeights = [new BigInt(50).toBigDecimal(), new BigInt(50).toBigDecimal()]
+        pool.outputTokenPriceUSD = getUsdPrice(
+          Address.fromString((pool.outputToken || ZERO_ADDRESS_STRING)!),
+          (pool.outputTokenSupply || new BigInt(1))!.toBigDecimal()
+        )
+        
+        pool.cumulativeVolumeUSD = BIGDECIMAL_ZERO
+        pool.totalValueLockedUSD = BIGDECIMAL_ZERO
+        // pool.fees = []
+
+        // dont track. but conform to standard
+        pool.createdTimestamp = BIGINT_ZERO
+        pool.createdBlockNumber = BIGINT_ZERO
+
         pool.save()
       }
 

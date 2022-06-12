@@ -1,22 +1,22 @@
 # https://github.com/messari/subgraphs/blob/master/schema-generic.graphql
 interface Token {
-  " Smart contract address of the token "
+  # " Smart contract address of the token "
   id: ID!
 
-  " Name of the token, mirrored from the smart contract "
+  # " Name of the token, mirrored from the smart contract "
   name: String!
-  " Symbol of the token, mirrored from the smart contract "
+  # " Symbol of the token, mirrored from the smart contract "
   symbol: String!
-  " The number of decimal places this token uses, default to 18 "
+  # " The number of decimal places this token uses, default to 18 "
   decimals: Int!
-  " Optional field to track the price of a token, mostly for caching purposes "
+  # " Optional field to track the price of a token, mostly for caching purposes "
   lastPriceUSD: BigDecimal
-  " Optional field to track the block number of the last token price "
+  # " Optional field to track the block number of the last token price "
   lastPriceBlockNumber: BigInt
 }
 
 type ETF implements Token @entity {
-  id: ID!
+  id: ID! # token address
 
   # standard token stuff
   name: String!
@@ -64,90 +64,254 @@ type Component implements Token @entity {
 
 # union TokenLike = Token | ETF | Component
 
+# interface Event {
+#   id: ID!
+#   etf: ETF!
+#   blockNumber: BigInt!
+#   timestamp: BigInt!
+# }
+
+
+# type BuyEvent implements Event @entity {
+#   id: ID!
+#   etf: ETF!
+#   blockNumber: BigInt!
+#   timestamp: BigInt!
+
+#   swap: Swap!
+# }
+
+# type SellEvent implements Event @entity {
+#   id: ID!
+#   etf: ETF!
+#   block: BigInt!
+#   timestamp: BigInt!
+
+#   swap: Swap!
+# }
+
+
+
+# MEsssari Standard Event
 interface Event {
+  # " { Event type }-{ Transaction hash }-{ Log index } "
   id: ID!
+  # " Transaction hash of the transaction that emitted this event "
+  hash: String!
+  # " Event log index. For transactions that don't emit event, create arbitrary index starting from 0 "
+  logIndex: Int!
+  # " The protocol this transaction belongs to "
+  # protocol: DexAmmProtocol!
+
+  # " Address that received the tokens "
+  to: String!
+  # " Address that sent the tokens "
+  from: String!
+  # " Block number of this event "
+  blockNumber: BigInt!
+  # " Timestamp of this event "
+  timestamp: BigInt!
+
+  # custom field to track only ETFs in events even tho
+  # other tokens are tracked for liquidity and shit in entities
   etf: ETF!
-  block: BigInt!
-  time: BigInt!
 }
 
 type MintEvent implements Event @entity {
   id: ID!
+  hash: String!
+  logIndex: Int!
+  # protocol: DexAmmProtocol!
   etf: ETF!
-  block: BigInt!
-  time: BigInt!
-
-  holder: Holder!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  from: String!
+  to: String!
   amount: BigInt!
 }
 
 type RedeemEvent implements Event @entity {
   id: ID!
+  hash: String!
+  logIndex: Int!
+  # protocol: DexAmmProtocol!
   etf: ETF!
-  block: BigInt!
-  time: BigInt!
-
-  holder: Holder!
+  
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  from: String!
+  to: String!
   amount: BigInt!
 }
 
 type TransferEvent implements Event @entity {
   id: ID!
+  hash: String!
+  logIndex: Int!
+  # protocol: DexAmmProtocol!
   etf: ETF!
-  block: BigInt!
-  time: BigInt!
-
-  from: Holder # nullable for mint/redeem
-  to: Holder # nullable for mint/redeem
+  
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  from: String! # nullable for mint/redeem
+  to: String! # nullable for mint/redeem
   amount: BigInt!
 }
 
-type BuyEvent implements Event @entity {
+
+type Deposit implements Event @entity {
   id: ID!
+  hash: String!
+  logIndex: Int!
+  # protocol: DexAmmProtocol!
   etf: ETF!
-  block: BigInt!
-  time: BigInt!
-
-  swap: Swap!
+  to: String!
+  from: String!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  inputTokens: [Token!]!
+  outputToken: Token
+  inputTokenAmounts: [BigInt!]!
+  outputTokenAmount: BigInt
+  amountUSD: BigDecimal!
+  pool: LiquidityPool!
 }
 
-type SellEvent implements Event @entity {
+type Withdraw implements Event @entity {
   id: ID!
+  hash: String!
+  logIndex: Int!
+  # protocol: DexAmmProtocol!
   etf: ETF!
-  block: BigInt!
-  time: BigInt!
-
-  swap: Swap!
+  to: String!
+  from: String!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  inputTokens: [Token!]!
+  outputToken: Token
+  inputTokenAmounts: [BigInt!]!
+  outputTokenAmount: BigInt
+  amountUSD: BigDecimal!
+  pool: LiquidityPool!
 }
 
-type Pool @entity {
-  id: ID! # pool address
-  totalSwapVolume: BigInt! # in base tokens
-  totalSwapVolumeUsd: BigInt! 
-
-  # assume that pools are uni 50/50 pools
-  baseToken: Token!   # address of token we are tracking
-  quoteToken: Token!  # address of other token in pool
-  
-  baseTokenBalance: BigInt!
-  quoteTokenBalance: BigInt!
-
-  swaps: [Swap!] @derivedFrom(field: "pool")
-}
-
-type Swap @entity {
-  id: ID! # tx hash
-  pool: Pool!
-  trader: Holder!
-  # isBuy: Boolean! # if swap is buying token we are tracking
-
+type Swap implements Event @entity {
+  id: ID!
+  hash: String!
+  logIndex: Int!
+  # protocol: DexAmmProtocol!
+  etf: ETF!
+  to: String!
+  from: String!
+  blockNumber: BigInt!
+  timestamp: BigInt!
   tokenIn: Token!
-  tokenInAmount: BigInt!
-  tokenInUsd: BigInt!
-
+  amountIn: BigInt!
+  amountInUSD: BigDecimal!
   tokenOut: Token!
-  tokenOutAmount: BigInt!
+  amountOut: BigInt!
+  amountOutUSD: BigDecimal!
+  pool: LiquidityPool!
 }
+
+# type Pool @entity {
+#   id: ID! # pool address
+#   totalSwapVolume: BigInt! # in base tokens
+#   totalSwapVolumeUsd: BigInt! 
+
+#   # assume that pools are uni 50/50 pools
+#   baseToken: Token!   # address of token we are tracking
+#   quoteToken: Token!  # address of other token in pool
+  
+#   baseTokenBalance: BigInt!
+#   quoteTokenBalance: BigInt!
+
+#   swaps: [Swap!] @derivedFrom(field: "pool")
+# }
+
+# Messari standard Pool. We will comment out fields we aren't using for now
+# We excpect all pools to be Uni v2-ish atm so if supporting other exchanges check code
+type LiquidityPool @entity {
+  # " Smart contract address of the pool "
+  id: ID!
+  # " The protocol this pool belongs to "
+  # protocol: DexAmmProtocol!
+  # " Name of liquidity pool (e.g. Curve.fi DAI/USDC/USDT) "
+  name: String
+
+  # " Symbol of liquidity pool (e.g. 3CRV) "
+  symbol: String
+
+  # " Tokens that need to be deposited to take a position in protocol. e.g. WETH and USDC to deposit into the WETH-USDC pool. Array to account for multi-asset pools like Curve and Balancer "
+  inputTokens: [Token!]!
+
+  # " Token that is minted to track ownership of position in protocol "
+  outputToken: Token
+
+  # " Aditional tokens that are given as reward for position in a protocol, usually in liquidity mining programs. e.g. SUSHI in the Onsen program, MATIC for Aave Polygon, usually in liquidity mining programs. e.g. SUSHI in the Onsen program, MATIC for Aave Polygon "
+  # rewardTokens: [RewardToken!]
+  # " Fees per trade incurred to the user. Should include all fees that apply to a pool (e.g. Curve has a trading fee AND an admin fee, which is a portion of the trading fee. Uniswap only has a trading fee and no protocol fee. ) "
+  # fees: [LiquidityPoolFee!]!
+
+  # " Creation timestamp "
+  createdTimestamp: BigInt!
+
+  # " Creation block number "
+  createdBlockNumber: BigInt!
+
+  ##### Quantitative Data #####
+
+  # " Current TVL (Total Value Locked) of this pool in USD "
+  totalValueLockedUSD: BigDecimal!
+
+  # " All historical trade volume occurred in this pool, in USD "
+  cumulativeVolumeUSD: BigDecimal!
+  # " Amount of input tokens in the pool. The ordering should be the same as the pool's `inputTokens` field. "
+  inputTokenBalances: [BigInt!]!
+  # " Weights of input tokens in the liquidity pool in percentage values. For example, 50/50 for Uniswap pools, 48.2/51.8 for a Curve pool, 10/10/80 for a Balancer pool "
+  inputTokenWeights: [BigDecimal!]!
+  # " Total supply of output token. Note that certain DEXes don't have an output token (e.g. Bancor) "
+  outputTokenSupply: BigInt
+
+  # " Price per share of output token in USD "
+  outputTokenPriceUSD: BigDecimal
+  
+  # " Total supply of output tokens that are staked (usually in the MasterChef contract). Used to calculate reward APY. "
+  stakedOutputTokenAmount: BigInt
+
+  # " Per-block reward token emission as of the current block normalized to a day, in token's native amount. This should be ideally calculated as the theoretical rate instead of the realized amount. "
+  # rewardTokenEmissionsAmount: [BigInt!]
+  # " Per-block reward token emission as of the current block normalized to a day, in USD value. This should be ideally calculated as the theoretical rate instead of the realized amount. "
+  # rewardTokenEmissionsUSD: [BigDecimal!]
+  ##### Snapshots #####
+  # " Liquidity pool daily snapshots "
+  # dailySnapshots: [LiquidityPoolDailySnapshot!]! @derivedFrom(field: "pool")
+  # " Liquidity pool hourly snapshots "
+  # hourlySnapshots: [LiquidityPoolHourlySnapshot!]! @derivedFrom(field: "pool")
+  ##### Events #####
+  # " All deposit (add liquidity) events occurred in this pool "
+  deposits: [Deposit!]! @derivedFrom(field: "pool")
+
+  # " All withdraw (remove liquidity) events occurred in this pool "
+  withdraws: [Withdraw!]! @derivedFrom(field: "pool")
+
+  # " All trade (swap) events occurred in this pool "
+  swaps: [Swap!]! @derivedFrom(field: "pool")
+}
+
+# type Swap @entity {
+#   id: ID! # tx hash
+#   pool: Pool!
+#   trader: Holder!
+#   # isBuy: Boolean! # if swap is buying token we are tracking
+
+#   tokenIn: Token!
+#   tokenInAmount: BigInt!
+#   tokenInUsd: BigInt!
+
+#   tokenOut: Token!
+#   tokenOutAmount: BigInt!
+# }
 
 type Holder @entity {
   id: ID! # "holder - etf" address
