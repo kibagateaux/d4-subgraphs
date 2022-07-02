@@ -1,28 +1,47 @@
 import {
-  BigInt,
-  BigDecimal,
-  Address,
-  crypto,
   log,
+  Bytes,
+  crypto,
+  BigInt,
+  Address,
+  ethereum,
+  ByteArray,
+  BigDecimal,
  } from "@graphprotocol/graph-ts"
 
 import { ChainlinkFeed } from "./types/templates"
 
 import {
-  UniV3Pool
-} from "./types/ChainlinkFeedRegistry/UniV3Pool"
-
-import {
   OraclePaid as OraclePaidEvent
 } from "./types/templates/ChainlinkFeed/ChainlinkFeed"
 
-import { getUsdPrice } from "./prices"
+import {
+  ChainlinkVRF2,
+  RandomWordsFulfilled as RandomWordsFulfilledEvent,
+} from "./types/ChainlinkVRF2/ChainlinkVRF2"
 
-import { Node, Feed, Payment, GlobalSummary  } from "./types/schema"
-import { BIGDECIMAL_1E18, BIGDECIMAL_ZERO, BIGINT_1E18, BIGINT_ZERO } from "./prices/common/constants"
+import {
+  Node,
+  Feed,
+  Payment,
+  GlobalSummary
+} from "./types/schema"
+
+import {
+  BIGINT_ZERO,
+  BIGINT_1E18,
+  BIGDECIMAL_ZERO,
+  BIGDECIMAL_1E18,
+} from "./prices/common/constants"
+
+import { getUsdPrice } from "./prices"
 
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+export const SERVICE_VRF2 = 'vrf2'
+export const SERVICE_PRICE_FEED = 'price-feed'
+export const SERVICE_KEEPER = 'keeper'
 
 export function getGlobalSummary(): GlobalSummary {
   let global = GlobalSummary.load(ZERO_ADDRESS);
@@ -37,55 +56,39 @@ export function getGlobalSummary(): GlobalSummary {
   return global;
 }
 
-export function getOrCreateFeed(address: Address, startBlock: BigInt): Feed {
+export function getOrCreateFeed(address: Address, startBlock: BigInt, service: string): Feed {
+  if(service == SERVICE_VRF2) {
+    return getOrCreateVrfFeed(address, startBlock);
+  }
+
+  // default to price feed. makes type system easier not having to deal with null
+  return getOrCreatePriceFeed(address, startBlock);
+}
+
+export function getOrCreateVrfFeed(address: Address, startBlock: BigInt): Feed {
+  let feed = Feed.load(address.toHexString());
+  if(feed === null) {
+    feed = new Feed(address.toHexString());
+    feed.startBlock = startBlock;
+    feed.nodes = [];
+    feed.service = SERVICE_VRF2;
+    feed.save();
+  }
+  return feed;
+}
+
+export function getOrCreatePriceFeed(address: Address, startBlock: BigInt): Feed {
   let feed = Feed.load(address.toHexString());
   if(feed === null) {
     ChainlinkFeed.create(address); // start indexing payments on new feed
     feed = new Feed(address.toHexString());
     feed.startBlock = startBlock;
     feed.nodes = [];
+    feed.service = SERVICE_PRICE_FEED;
     feed.save();
   }
   return feed;
 }
-
-
-// Uni V3 launched right before feed registry so we can use it for all LINK pricing
-const UNI_V3_ETH_LINK_30_BPS_POOL: Address = Address.fromString("0xa6cc3c2531fdaa6ae1a3ca84c2855806728693e8");
-const UNI_V3_ETH_USDC_5_BPS_POOL: Address = Address.fromString("0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640");
-const linkEthPool = UniV3Pool.bind(UNI_V3_ETH_LINK_30_BPS_POOL);
-const ethUsdPool = UniV3Pool.bind(UNI_V3_ETH_USDC_5_BPS_POOL);
-
-// getting price from uni v3 pool docs
-// https://docs.uniswap.org/sdk/guides/fetching-prices#understanding-sqrtprice
-let priceExponent = 2 ** 192
-let Q192 = BigDecimal.fromString(priceExponent.toString());
-
-export function getLinkUsdPrice(block: BigInt): BigInt {
-  const linkEthXqrtPriceX96 = linkEthPool.slot0().value0;
-  // const linkEthPrice = (new BigInt(2)).pow(192).div(pow(2));
-  // const ethUsdPrice =  ethUsdPool.slot0().value0.pow(2).div((new BigInt(2)).pow(192));
-
-  let linkEthNum = linkEthXqrtPriceX96.times(linkEthXqrtPriceX96).toBigDecimal()
-  let linkEthPrice = linkEthNum
-    .div(Q192)
-    .times(exponentToBigDecimal(BigInt.fromI32(18))) // ETH decimals
-    .div(BIGDECIMAL_1E18); // LINK decimals
-
-  log.info('LINK/ETH price {} at block {}', [linkEthPrice.toString(), block.toString()]);
-
-  const ethUsdXqrtPriceX96 = ethUsdPool.slot0().value0;
-  let ethUsdNum = ethUsdXqrtPriceX96.times(ethUsdXqrtPriceX96).toBigDecimal()
-  let ethUsdPrice = linkEthNum
-    .div(Q192)
-    .times(exponentToBigDecimal(BigInt.fromI32(6))) // USDC decimals
-    .div(BIGDECIMAL_1E18) // ETH decimals
-
-  log.info('ETH/USD price {} at block {}', [ethUsdPrice.toString(), block.toString()]);
-  // TODO need to do something about token decimals before returning price me thinks
-  return BigInt.fromString(linkEthPrice.times(ethUsdPrice).toString());
-}
-
 
 export function getOrCreateNode(address: Address): Node {
   let node = Node.load(address.toHexString());
@@ -98,15 +101,16 @@ export function getOrCreateNode(address: Address): Node {
 
 
 // hashes feed address, node address, and block to get unique id
-export function generatePaymentId(event: OraclePaidEvent): string {
+export function generatePaymentId(event: ethereum.Event): string {
   const paymentData = event.transaction.hash
     .concat(event.address) //feed
-    .concat(event.params.payee); // chainlink node
-
+    .concat(Bytes.fromHexString(event.logIndex.toHexString()));
+    
   return crypto.keccak256(paymentData).toHexString();
 }
 
-export function getOrCreatePayment(event: OraclePaidEvent): Payment {
+export function getOrCreatePayment(event: object, service: string): Payment {
+  const nodeAddress = getNodeForPayment(event, service);
   const paymentId = generatePaymentId(event);
   let payment = Payment.load(paymentId);
 
@@ -120,19 +124,19 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
 
     payment = new Payment(paymentId);
     
-    payment.amount = event.params.amount;
-    // payment.usd = event.params.amount
-    //   .times(getLinkUsdPrice(event.block.number))
-    //   .div((new BigInt(10)).pow(18)); // remove LINK token decimals
+    // payment.amount = service === SERVICE_PRICE_FEED ? event.params.amount : event.params.payment;
+    payment.amount = event.params.amount || event.params.payment;
     payment.usd = getUsdPrice(
       event.params.linkToken,
       payment.amount.toBigDecimal()
     ).div(BIGDECIMAL_1E18)
+
     payment.block = event.block.number;
     payment.timestamp = event.block.timestamp;
 
-    const feed = getOrCreateFeed(event.address, event.block.number);
+    const feed = getOrCreateFeed(event.address, event.block.number, service);
     payment.feed = feed.id;
+
     payment.to = (getOrCreateNode(event.params.payee)).id;
 
     payment.save();
@@ -153,9 +157,62 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
   }
 
   return payment;
-
 }
 
+// return oracle address
+export function getNodeForPayment(event: object, service: string): Bytes {
+  const type  = nameof(event)
+  log.warning("type of payment", [type]);
+
+  if(service === SERVICE_VRF2) {
+    // VRF event doesnt publish who which node serviced the request
+    // so we have to parse tx input and query onchain data to get Node's address
+
+    const coordinator = ChainlinkVRF2.bind(event.address);
+
+    // vrf Proof is 12 32 bytes (uint256s) + 1 20 bytes (address)
+    // https://github.com/smartcontractkit/chainlink/blob/e1e78865d4f3e609e7977777d7fb0604913b63ed/contracts/src/v0.8/VRF.sol#L539-L549
+    // vrf Request Commitment  is all packed into one slot
+    // // https://github.com/smartcontractkit/chainlink/blob/e1e78865d4f3e609e7977777d7fb0604913b63ed/contracts/src/v0.8/VRFCoordinatorV2.sol#L101-L107
+    
+    //  OPTION 1: 
+    // const proof = sliceHex(event.transaction.input, 0, 13 * 2);
+    const str = event.transaction.input.toString();
+    const proof = str.substring(0, 2 + 13 * 2);
+    const rc = str.substring(29);
+    
+    
+    // OPTION 2:
+    // const proofStruct =  'uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,uint256,uint256,uint256,uint256,uint256'
+    // const rcStruct =  'uint64,uin64,uint32,uint32,address';
+    // let decodedInputTuple = ethereum.decode(
+      //   `(${proofStruct},${rcStruct})`,
+      //   getTxnInputDataToDecode(event)
+      // )!.toTuple()
+      // log.warning('Dedoced tx data', [decodedInputTuple.toString()]);
+      // const data2 = coordinator.getRandomnessFromProof(decodedInputTuple); // pretty sure we have to do same thing as above and split anyway
+      
+    // FUNCTION USED TO GET NODE ADDRESS IS PRIVATE SO NOT IN ABI
+    // OPTION 1/2 not viable (?)
+    const data = coordinator.getRandomnessFromProof(proof, rc);
+
+
+    // OPTION 3: node address is used as key in mapping that gets updated in tx
+    // can try to trace stack or reverese engineer address from storage slot or something
+    let runDetails = ethereum.decode(
+      'bytes32,uint256,uint256',
+      getTxnInputDataToDecode(data)
+    )!.toTuple()
+
+    
+    log.warning("VRF Node is...", [runDetails[0].toString()]);
+    return runDetails[0].toBytes()
+  }
+
+  log.warning("Price Feed Node is...", [event.params.payee]);
+  // default to prevent annoying type stuff
+  return event.params.payee
+}
 
 export function exponentToBigDecimal(decimals: BigInt): BigDecimal {
   let dec = "1"
@@ -163,4 +220,21 @@ export function exponentToBigDecimal(decimals: BigInt): BigDecimal {
     dec = dec + "0"
   }
   return BigDecimal.fromString(dec)
+}
+
+// stolen from prices lib
+export function sliceHex(data: ByteArray, offset: number, endOffset: number = 0): ByteArray {
+  const str: string = data.toHexString()
+  offset = 2 + 2 * offset as i32;
+  if (endOffset !== 0) {
+      return ByteArray.fromHexString("0x" + str.substring(offset as i32, 2 + 2 * endOffset as i32));
+  }
+  return ByteArray.fromHexString("0x" + str.substring(offset as i32));
+}
+
+// stolen from xnhns
+export function getTxnInputDataToDecode(event: ethereum.Event): Bytes {
+  const inputDataHexString = event.transaction.input.toHexString().slice(10); //take away function signature: '0x????????'
+  const hexStringToDecode = '0x0000000000000000000000000000000000000000000000000000000000000020' + inputDataHexString; // prepend tuple offset
+  return Bytes.fromByteArray(Bytes.fromHexString(hexStringToDecode));
 }

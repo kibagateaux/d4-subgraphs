@@ -5,6 +5,7 @@
     "codegen": "graph codegen --debugg --output-dir src/types/",
     "build": "graph build",
     "deploy": "graph deploy --studio --node https://api.studio.thegraph.com/deploy/ chainlink-feedregistry-revenue",
+    "deploy-hosted": "graph deploy --product hosted-service kibagateaux/chainlink-network-fees",
     "create-local": "graph create --node http://localhost:8020/ chainlink-revenue",
     "remove-local": "graph remove --node http://localhost:8020/ chainlink-revenue",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 chainlink-revenue"

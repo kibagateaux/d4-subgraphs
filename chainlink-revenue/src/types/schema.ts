@@ -76,6 +76,15 @@ export class Feed extends Entity {
   set startBlock(value: BigInt) {
     this.set("startBlock", Value.fromBigInt(value));
   }
+
+  get service(): string {
+    let value = this.get("service");
+    return value!.toString();
+  }
+
+  set service(value: string) {
+    this.set("service", Value.fromString(value));
+  }
 }
 
 export class Node extends Entity {
