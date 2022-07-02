@@ -102,10 +102,6 @@ export function getTokenBalance(token: Address, address: Address): BigInt {
 }
 
 export function getEtfMarketcap(etf: ETF): BigDecimal {
-  log.warning(
-    "mcap vars supply {}, decimals {}",
-    [etf.totalSupply.toString(), etf.decimals.toString()]
-  )
   const value = getUsdPrice(
     Address.fromString(etf.id),
     etf.totalSupply.toBigDecimal()
@@ -114,18 +110,18 @@ export function getEtfMarketcap(etf: ETF): BigDecimal {
 }
 
 
-const UNI_V2_FACTORY = Address.fromString("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-const SUSHI_FACTORY = Address.fromString("0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
 const ETH_ADDRESS = ZERO_ADDRESS
 const USDC_ADDRESS = Address.fromString("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
-const UNI_FACTORY_INITCODE = Bytes.fromHexString('0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f')
+const SUSHI_FACTORY = Address.fromString("0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
+const UNI_V2_FACTORY = Address.fromString("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
+const FACTORY_INITCODE = Bytes.fromHexString("0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f")
 
 const DATA_ETH_SUSHI_POOL = Address.fromString("0x208226200b45b82212b814f49efa643980a7bdd1")
 
 function encodeAndHash(values: Array<ethereum.Value>): ByteArray {
   return crypto.keccak256(
     ethereum.encode(
-      // forcefully cast value[] -> tuple
+      // forcefully cast Value[] -> Tuple
       ethereum.Value.fromTuple( changetype<ethereum.Tuple>(values) )
     )!
   )
@@ -140,21 +136,35 @@ function getTokenSalt(token0: Address, token1: Address): Bytes  {
   )
 }
 
-export function getPoolPairAddress(factory: Address, salt: Bytes, initCode: Bytes): Address {
+export function getPoolPairAddress(
+  factory: Address, 
+  token0: Address,
+  token1: Address,
+  initCode: Bytes
+): Address {
 // https://docs.uniswap.org/protocol/V2/guides/smart-contract-integration/getting-pair-addresses
+  const ordered = orderTokensForPoolHash(token0, token1)
+  const salt = getTokenSalt(ordered[0], ordered[1])
 
   const poolHash = encodeAndHash([
-    ethereum.Value.fromBytes(Bytes.fromHexString('0xff')),
+    ethereum.Value.fromBytes(Bytes.fromHexString("0xff")),
     ethereum.Value.fromAddress(factory),
     ethereum.Value.fromBytes(salt),
     ethereum.Value.fromBytes(initCode)
   ])
-  log.warning("uni pool hash {}", [poolHash.toHexString()])
-  const addrOffset = 26 // trim  0x + first 12 bytes
-  const poolAddr = poolHash.toHexString().substring(addrOffset)
-  log.warning("uni pool addr {}", [poolAddr])
+  log.warning("uni pool hash {}", [poolHash.toHexString(), poolHash.length.toString()])
+  const addrOffset = 24 // get last 40 bytes of "private" key
+  // const poolAddr = poolHash.toHexString().slice(0, addrOffset)
+  
+  const poolAddr = sliceHex(poolHash, addrOffset)
 
-  return Address.fromString(poolAddr)
+  log.warning(
+    "uni pool hash addr {}, length {}",
+    [poolAddr.toHexString(), poolAddr.length.toString()]
+  )
+
+  return Address.fromString(poolAddr.toHexString())
+  // return getCreate2Address(factory, salt, initCode) as Address
 }
 
 function orderTokensForPoolHash(token0: Address, token1: Address): Address[] {
@@ -180,66 +190,70 @@ export function getOrCreatePoolsForToken(token: Address, isEtf: bool): Liquidity
    const poolSettings: Address[][] = [
      [ UNI_V2_FACTORY, token, USDC_ADDRESS ],
      [ UNI_V2_FACTORY, token, ETH_ADDRESS ],
-     [ SUSHI_FACTORY, token, USDC_ADDRESS ],
-     [ SUSHI_FACTORY, token, ETH_ADDRESS ]
+    //  [ SUSHI_FACTORY, token, USDC_ADDRESS ],
+    //  [ SUSHI_FACTORY, token, ETH_ADDRESS ]
    ]
   // don't need to have eth/usdc token data stored. only care about LP
 
-  const pools: LiquidityPool[] = changetype<LiquidityPool[]>(
-    poolSettings.map<LiquidityPool>((p: Address[]): LiquidityPool => {
-      const ordered = orderTokensForPoolHash(p[1], p[2])
-      const addy = getPoolPairAddress(
-        p[0],
-        // Bytes.fromByteArray(getTokenSalt(ordered[0], ordered[1])),
-        changetype<Bytes>(getTokenSalt(ordered[0], ordered[1])),
-        UNI_FACTORY_INITCODE
-      )
-      // const addy = DATA_ETH_SUSHI_POOL
+  const pools: LiquidityPool[] = poolSettings.map<LiquidityPool>(
+    (p: Address[]): LiquidityPool =>
+  {
+    const tokens = [p[1], p[2]]
+    const addy = getPoolPairAddress(
+      p[0],
+      p[1],
+      p[2],
+      FACTORY_INITCODE
+    )
 
-      let pool = LiquidityPool.load(addy.toHexString())
+    // const addy = DATA_ETH_SUSHI_POOL
+
+    let pool = LiquidityPool.load(addy.toHexString())
+    
+    if(pool === null) {
+      Pools.create(addy) //start tracking events on pool
+      pool = new LiquidityPool(addy.toHexString()) 
+      const poolErc = _ERC20.bind(addy)
       
-      if(pool === null) {
-        Pools.create(addy) //start tracking events on pool
-        pool = new LiquidityPool(addy.toHexString()) 
-        const poolErc = _ERC20.bind(addy)
 
-        const nameResult = poolErc.try_name()
-        if(!nameResult.reverted) pool.name = nameResult.value
-        else pool.name = `${ordered[0]}/${ordered[1]} LP`
-        
-        const symbolResult = poolErc.try_symbol()
-        if(!symbolResult.reverted) pool.symbol = symbolResult.value
-        else pool.symbol = `${ordered[0]}-${ordered[1]}-LP`
-        
-        // assumes uni v2 pool
-        const totalSupplyResult = poolErc.try_totalSupply()
-        if(!totalSupplyResult.reverted) pool.outputTokenSupply = totalSupplyResult.value
-        else pool.outputTokenSupply = BIGINT_ZERO
-        
-        pool.inputTokens = ordered.map<string>((a) => a.toString())
-        pool.outputToken  = addy.toHexString() //  for uni v2ish LP token is pair contract
-        pool.inputTokenBalances = [getTokenBalance(addy, ordered[0]), getTokenBalance(addy, ordered[1])]
-        // @dev assume all pools are uni v2ish 50/50 pools
-        pool.inputTokenWeights = [new BigInt(50).toBigDecimal(), new BigInt(50).toBigDecimal()]
-        pool.outputTokenPriceUSD = getUsdPrice(
-          Address.fromString((pool.outputToken || ZERO_ADDRESS_STRING)!),
-          (pool.outputTokenSupply || new BigInt(1))!.toBigDecimal()
-        )
-        
-        pool.cumulativeVolumeUSD = BIGDECIMAL_ZERO
-        pool.totalValueLockedUSD = BIGDECIMAL_ZERO
-        // pool.fees = []
+      // TODO get token Names and use in LP pair
+      const nameResult = poolErc.try_name()
+      if(!nameResult.reverted) pool.name = nameResult.value
+      else pool.name = `LP Token`
+      
+      const symbolResult = poolErc.try_symbol()
+      if(!symbolResult.reverted) pool.symbol = symbolResult.value
+      else pool.symbol = `LP`
+      
+      // assumes uni v2 pool
+      const totalSupplyResult = poolErc.try_totalSupply()
+      if(!totalSupplyResult.reverted) pool.outputTokenSupply = totalSupplyResult.value
+      else pool.outputTokenSupply = BIGINT_ZERO
+      
+      pool.inputTokens = tokens.map<string>((a) => a.toString())
+      pool.outputToken  = addy.toHexString() //  for uni v2ish LP token is pair contract
+      pool.inputTokenBalances = [getTokenBalance(addy, tokens[0]), getTokenBalance(addy, tokens[1])]
+      // @dev assume all pools are uni v2ish 50/50 pools
+      pool.inputTokenWeights = tokens.map<BigDecimal>((a) => new BigInt(50).toBigDecimal())
+      // [new BigInt(50).toBigDecimal(), new BigInt(50).toBigDecimal()]
+      pool.outputTokenPriceUSD = getUsdPrice(
+        Address.fromString((pool.outputToken || ZERO_ADDRESS_STRING)!),
+        (pool.outputTokenSupply || new BigInt(1))!.toBigDecimal()
+      )
+      
+      pool.cumulativeVolumeUSD = BIGDECIMAL_ZERO
+      pool.totalValueLockedUSD = BIGDECIMAL_ZERO
+      // pool.fees = []
 
-        // dont track. but conform to standard
-        pool.createdTimestamp = BIGINT_ZERO
-        pool.createdBlockNumber = BIGINT_ZERO
+      // dont track. but conform to standard
+      pool.createdTimestamp = BIGINT_ZERO
+      pool.createdBlockNumber = BIGINT_ZERO
 
-        pool.save()
-      }
+      pool.save()
+    }
 
-      return pool
-    })
-  )
+    return pool
+  })
 
   return pools
 }
@@ -250,4 +264,13 @@ export function exponentToBigDecimal(decimals: number): BigDecimal {
     dec = dec + "0"
   }
   return BigDecimal.fromString(dec)
+}
+
+export function sliceHex(data: ByteArray, offset: number, endOffset: number = 0): ByteArray {
+  const str: string = data.toHexString()
+  offset = 2 + 2 * offset as i32;
+  if (endOffset !== 0) {
+      return ByteArray.fromHexString("0x" + str.substring(offset as i32, 2 + 2 * endOffset as i32));
+  }
+  return ByteArray.fromHexString("0x" + str.substring(offset as i32));
 }

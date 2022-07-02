@@ -1,20 +1,23 @@
 import {
   BigInt,
+  ByteArray,
   BigDecimal,
   Address,
   crypto,
   log,
+  Bytes,
  } from "@graphprotocol/graph-ts"
 
 import { ChainlinkFeed } from "./types/templates"
 
 import {
-  UniV3Pool
-} from "./types/ChainlinkFeedRegistry/UniV3Pool"
-
-import {
   OraclePaid as OraclePaidEvent
 } from "./types/templates/ChainlinkFeed/ChainlinkFeed"
+
+import {
+  ChainlinkVRF2,
+  RandomWordsFulfilled as RandomWordsFulfilledEvent
+} from "./types/ChainlinkVRF2/ChainlinkVRF2"
 
 import { getUsdPrice } from "./prices"
 
@@ -23,6 +26,9 @@ import { BIGDECIMAL_1E18, BIGDECIMAL_ZERO, BIGINT_1E18, BIGINT_ZERO } from "./pr
 
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+export const SERVICE_PRICE_FEED = 'price-feed'
+export const SERVICE_VRF2 = 'vrf2'
+export const SERVICE_KEEPR = 'keeper'
 
 export function getGlobalSummary(): GlobalSummary {
   let global = GlobalSummary.load(ZERO_ADDRESS);
@@ -37,55 +43,20 @@ export function getGlobalSummary(): GlobalSummary {
   return global;
 }
 
-export function getOrCreateFeed(address: Address, startBlock: BigInt): Feed {
+export function getOrCreateFeed(address: Address, startBlock: BigInt, service: string): Feed {
   let feed = Feed.load(address.toHexString());
   if(feed === null) {
-    ChainlinkFeed.create(address); // start indexing payments on new feed
+    //i if price feed start indexing payments on new feed
+    if(service === SERVICE_PRICE_FEED) ChainlinkFeed.create(address);
+
     feed = new Feed(address.toHexString());
     feed.startBlock = startBlock;
     feed.nodes = [];
+    feed.service = service;
     feed.save();
   }
   return feed;
 }
-
-
-// Uni V3 launched right before feed registry so we can use it for all LINK pricing
-const UNI_V3_ETH_LINK_30_BPS_POOL: Address = Address.fromString("0xa6cc3c2531fdaa6ae1a3ca84c2855806728693e8");
-const UNI_V3_ETH_USDC_5_BPS_POOL: Address = Address.fromString("0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640");
-const linkEthPool = UniV3Pool.bind(UNI_V3_ETH_LINK_30_BPS_POOL);
-const ethUsdPool = UniV3Pool.bind(UNI_V3_ETH_USDC_5_BPS_POOL);
-
-// getting price from uni v3 pool docs
-// https://docs.uniswap.org/sdk/guides/fetching-prices#understanding-sqrtprice
-let priceExponent = 2 ** 192
-let Q192 = BigDecimal.fromString(priceExponent.toString());
-
-export function getLinkUsdPrice(block: BigInt): BigInt {
-  const linkEthXqrtPriceX96 = linkEthPool.slot0().value0;
-  // const linkEthPrice = (new BigInt(2)).pow(192).div(pow(2));
-  // const ethUsdPrice =  ethUsdPool.slot0().value0.pow(2).div((new BigInt(2)).pow(192));
-
-  let linkEthNum = linkEthXqrtPriceX96.times(linkEthXqrtPriceX96).toBigDecimal()
-  let linkEthPrice = linkEthNum
-    .div(Q192)
-    .times(exponentToBigDecimal(BigInt.fromI32(18))) // ETH decimals
-    .div(BIGDECIMAL_1E18); // LINK decimals
-
-  log.info('LINK/ETH price {} at block {}', [linkEthPrice.toString(), block.toString()]);
-
-  const ethUsdXqrtPriceX96 = ethUsdPool.slot0().value0;
-  let ethUsdNum = ethUsdXqrtPriceX96.times(ethUsdXqrtPriceX96).toBigDecimal()
-  let ethUsdPrice = linkEthNum
-    .div(Q192)
-    .times(exponentToBigDecimal(BigInt.fromI32(6))) // USDC decimals
-    .div(BIGDECIMAL_1E18) // ETH decimals
-
-  log.info('ETH/USD price {} at block {}', [ethUsdPrice.toString(), block.toString()]);
-  // TODO need to do something about token decimals before returning price me thinks
-  return BigInt.fromString(linkEthPrice.times(ethUsdPrice).toString());
-}
-
 
 export function getOrCreateNode(address: Address): Node {
   let node = Node.load(address.toHexString());
@@ -131,7 +102,7 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
     payment.block = event.block.number;
     payment.timestamp = event.block.timestamp;
 
-    const feed = getOrCreateFeed(event.address, event.block.number);
+    const feed = getOrCreateFeed(event.address, event.block.number, SERVICE_PRICE_FEED);
     payment.feed = feed.id;
     payment.to = (getOrCreateNode(event.params.payee)).id;
 
@@ -154,6 +125,60 @@ export function getOrCreatePayment(event: OraclePaidEvent): Payment {
 
   return payment;
 
+}
+
+
+// hashes feed address, node address, and run id to get unique id
+export function generateVrf2PaymentId(event: RandomWordsFulfilledEvent): string {
+  const paymentData = event.transaction.hash
+  .concat(event.address) //feed
+  // forcefully cast Bytes -> Bytes. i dont fucking know
+  .concat(changetype<Bytes>(Bytes.fromBigInt(event.params.requestId))); // uuid for run
+
+  return crypto.keccak256(paymentData).toHexString();
+}
+
+
+export function getOrCreateVrf2Payment(event: RandomWordsFulfilledEvent): Payment {
+  const paymentId = generateVrf2PaymentId(event);
+  let payment = Payment.load(paymentId);
+
+  if(payment === null) {
+    // can't destructure in assemblyscript :'(
+    // const {
+    //   address,
+    //   params: { payment },
+    //   block: { number, timestamp }
+    // } = event;
+
+    payment = new Payment(paymentId);
+    
+    payment.amount = event.params.payment;
+    // LINK address not emmitted link Price Feeds so pull from conbtract storage
+    const link = (ChainlinkVRF2.bind(event.address)).LINK();
+    payment.usd = getUsdPrice(
+      link,
+      payment.amount.toBigDecimal()
+    ).div(BIGDECIMAL_1E18)
+    payment.block = event.block.number;
+    payment.timestamp = event.block.timestamp;
+
+    const feed = getOrCreateFeed(event.address, event.block.number, SERVICE_VRF2);
+    payment.feed = feed.id;
+
+    // TODO: implement Node on VRF2. See branch #feature/unified-chainlink-api
+    payment.to = ZERO_ADDRESS;
+
+    payment.save();
+
+    //update global tracker
+    const global = getGlobalSummary();
+    global.totalTokensPaid = global.totalTokensPaid.plus(payment.amount);
+    global.totalUsdPaid = global.totalUsdPaid.plus(payment.usd);
+    global.save();
+  }
+
+  return payment;
 }
 
 

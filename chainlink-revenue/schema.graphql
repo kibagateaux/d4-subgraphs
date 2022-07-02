@@ -1,8 +1,9 @@
 type Feed @entity {
-  id: ID! # address
-  nodes: [Node!]!
+  id: ID!             # address
+  nodes: [Node!]!     # all nodes that have ever serviced this feed
   payments: [Payment!] @derivedFrom(field: "feed")
   startBlock: BigInt! # when this subgrpah starts tracking data, not initial deployment
+  service: String!    # VRF, Data Feed, Keeper, ...
 }
 
 type Node @entity {
